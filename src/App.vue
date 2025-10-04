@@ -13,6 +13,16 @@ const isAdminPage = computed(() => {
   return route.path.startsWith("/admin");
 });
 
+// Full-width layout for exam pages
+const isExamPage = computed(() => {
+  return route.path.startsWith("/exam");
+});
+
+// Constrained layout for all other pages
+const isConstrainedPage = computed(() => {
+  return !isAdminPage.value && !isExamPage.value;
+});
+
 function handleLogout() {
   authStore.logout();
   router.push("/login");
@@ -47,8 +57,17 @@ function handleLogout() {
       </div>
     </header>
 
-    <!-- Main content - full height on admin pages -->
-    <main :class="['app-main', { 'admin-main': isAdminPage }]">
+    <!-- Main content - full height on admin pages, full width on exam pages -->
+    <main
+      :class="[
+        'app-main',
+        {
+          'admin-main': isAdminPage,
+          'exam-main': isExamPage,
+          'constrained-main': isConstrainedPage,
+        },
+      ]"
+    >
       <RouterView />
     </main>
   </div>
@@ -99,13 +118,22 @@ function handleLogout() {
   font-weight: 700;
 }
 
-/* Regular app main */
-.app-main {
+/* Regular app main - constrained layout */
+.app-main.constrained-main {
   flex-grow: 1;
   padding: 2rem;
   max-width: 1200px;
   width: 100%;
   margin: 0 auto;
+}
+
+/* Exam pages - full width, no padding constraints */
+.app-main.exam-main {
+  flex-grow: 1;
+  padding: 0;
+  max-width: none;
+  margin: 0;
+  width: 100%;
 }
 
 /* Admin pages - no padding, full width */

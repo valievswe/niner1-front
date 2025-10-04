@@ -17,7 +17,9 @@
 
       <section class="stats-grid">
         <div class="stat-card">
-          <div class="stat-icon students"><i class="fas fa-users"></i></div>
+          <div class="stat-icon students">
+            <i class="fa-solid fa-users"></i>
+          </div>
           <div class="stat-info">
             <div class="stat-value">{{ stats.totalStudents }}</div>
             <div class="stat-label">Total Students</div>

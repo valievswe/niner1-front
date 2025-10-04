@@ -62,7 +62,7 @@ const navLinks = [
   { to: "/admin/questions", text: "Questions", icon: "fas fa-circle-question" },
   { to: "/admin/templates", text: "Templates", icon: "fas fa-puzzle-piece" },
   { to: "/admin/scheduler", text: "Scheduler", icon: "fas fa-calendar-days" },
-  { to: "/admin/users", text: "Users", icon: "fas fa-users" },
+  { to: "/admin/users", text: "Users", icon: "fa-solid fa-users" },
   {
     to: "/admin/question-sets",
     text: "Question Sets",

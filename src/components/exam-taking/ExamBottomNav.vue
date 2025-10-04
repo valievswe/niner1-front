@@ -1,4 +1,3 @@
-<!-- src/components/exam-taking/ExamBottomNav.vue -->
 <script setup>
 import { computed } from "vue";
 
@@ -8,10 +7,10 @@ const props = defineProps({
   activeQuestionIndex: { type: Number, required: true },
   studentAnswers: { type: Object, required: true },
   questionNumberOffset: { type: Number, default: 0 },
-  questionNumberMap: { type: Object, required: true }, // NEW: Map of question IDs to global numbers
+  questionNumberMap: { type: Object, required: true },
 });
 
-const emit = defineEmits(["goToPart", "goToQuestion", "previous", "next"]);
+const emit = defineEmits(["goToPart", "goToQuestion"]);
 
 const sectionParts = computed(() => {
   if (!props.sectionQuestions.length) return [];
@@ -29,15 +28,12 @@ const currentPartQuestions = computed(() => {
   );
 });
 
-// Get the display number for a question using the map
 function getQuestionDisplayNumber(questionId) {
   return props.questionNumberMap[questionId] || "?";
 }
 
-// Check if a question has been answered
 function isAnswered(questionId) {
   const answer = props.studentAnswers[questionId];
-  // Check for various truthy values
   if (answer === undefined || answer === null) return false;
   if (typeof answer === "string" && answer.trim() === "") return false;
   if (Array.isArray(answer) && answer.length === 0) return false;
@@ -45,237 +41,321 @@ function isAnswered(questionId) {
     return false;
   return true;
 }
+
+const answeredInSection = computed(() => {
+  return props.sectionQuestions.filter((q) => isAnswered(q.question.id)).length;
+});
 </script>
 
 <template>
   <div class="bottom-nav">
-    <!-- Part Tabs -->
-    <div v-if="sectionParts.length > 1" class="part-tabs">
-      <button
-        v-for="(part, index) in sectionParts"
-        :key="part"
-        :class="{ active: index === activePartIndex }"
-        @click="emit('goToPart', index)"
-      >
-        Part {{ part }}
-      </button>
-    </div>
+    <div class="nav-container">
+      <!-- Part Tabs -->
+      <div v-if="sectionParts.length > 1" class="part-selector">
+        <span class="selector-label">Part:</span>
+        <div class="part-buttons">
+          <button
+            v-for="(part, index) in sectionParts"
+            :key="part"
+            :class="['part-btn', { active: index === activePartIndex }]"
+            @click="emit('goToPart', index)"
+            :title="`Navigate to Part ${part}`"
+          >
+            {{ part }}
+          </button>
+        </div>
+      </div>
 
-    <!-- Navigation Controls -->
-    <div class="nav-controls">
-      <button
-        class="nav-arrow"
-        @click="emit('previous')"
-        title="Previous Question"
-        :disabled="activePartIndex === 0 && activeQuestionIndex === 0"
-      >
-        ←
-      </button>
-
-      <!-- Question Palette -->
-      <div class="question-palette">
+      <!-- Question Navigator -->
+      <div class="question-navigator">
         <button
           v-for="(q, index) in currentPartQuestions"
           :key="q.question.id"
-          :class="{
-            answered: isAnswered(q.question.id),
-            current: index === activeQuestionIndex,
-          }"
+          :class="[
+            'question-btn',
+            {
+              answered: isAnswered(q.question.id),
+              current: index === activeQuestionIndex,
+            },
+          ]"
           @click="emit('goToQuestion', index)"
           :title="`Question ${getQuestionDisplayNumber(q.question.id)}${
-            isAnswered(q.question.id) ? ' (Answered)' : ''
+            isAnswered(q.question.id) ? ' - Answered' : ' - Not answered'
           }`"
         >
           {{ getQuestionDisplayNumber(q.question.id) }}
         </button>
       </div>
 
-      <button class="nav-arrow" @click="emit('next')" title="Next Question">
-        →
-      </button>
-    </div>
-
-    <!-- Progress Indicator -->
-    <div class="progress-info">
-      <span class="answered-count">
-        Answered: {{ Object.keys(studentAnswers).length }} /
-        {{ sectionQuestions.length }}
-      </span>
+      <!-- Progress Indicator -->
+      <div class="progress-indicator">
+        <span class="progress-label">Progress:</span>
+        <span class="progress-value">
+          {{ answeredInSection }}/{{ sectionQuestions.length }}
+        </span>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
 .bottom-nav {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background-color: #ffffff;
-  border-top: 1px solid #e0e0e0;
-  padding: 10px 20px;
-  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.08);
-  z-index: 100;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  background: #fafafa;
+  border-top: 1px solid #e2e8f0;
+  padding: 16px 0;
 }
 
-.part-tabs {
-  display: flex;
-  justify-content: center;
-  gap: 5px;
-  flex-wrap: wrap;
-}
-
-.part-tabs button {
-  padding: 8px 16px;
-  border: 1px solid #ccc;
-  background-color: transparent;
-  cursor: pointer;
-  border-radius: 20px;
-  font-weight: 500;
-  transition: all 0.2s;
-}
-
-.part-tabs button:hover {
-  background-color: #f0eaff;
-  border-color: #6200ea;
-}
-
-.part-tabs button.active {
-  background-color: #6200ea;
-  color: white;
-  border-color: #6200ea;
-}
-
-.nav-controls {
+.nav-container {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 20px;
+  gap: 24px;
+  max-width: 1800px;
+  margin: 0 auto;
+  padding: 0 32px;
 }
 
-.nav-arrow {
-  background-color: #6200ea;
-  color: white;
-  border: none;
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  font-size: 1.5rem;
-  cursor: pointer;
-  transition: background-color 0.2s;
+/* Part Selector */
+.part-selector {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   flex-shrink: 0;
 }
 
-.nav-arrow:hover:not(:disabled) {
-  background-color: #7e3ff2;
+.selector-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #4a5568;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-.nav-arrow:disabled {
-  background-color: #ccc;
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-.question-palette {
+.part-buttons {
   display: flex;
   gap: 8px;
-  align-items: center;
-  overflow-x: auto;
-  padding: 5px 0;
-  max-width: calc(100vw - 200px);
 }
 
-.question-palette::-webkit-scrollbar {
+.part-btn {
+  width: 36px;
+  height: 36px;
+  border: 1px solid #cbd5e0;
+  background: white;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 14px;
+  color: #4a5568;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.part-btn:hover {
+  border-color: #2c5282;
+  color: #2c5282;
+}
+
+.part-btn.active {
+  background: #2c5282;
+  border-color: #2c5282;
+  color: white;
+}
+
+/* Question Navigator */
+.question-navigator {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 0;
+  flex: 1;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e0 transparent;
+}
+
+.question-navigator::-webkit-scrollbar {
   height: 6px;
 }
 
-.question-palette::-webkit-scrollbar-track {
-  background: #f1f1f1;
+.question-navigator::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.question-navigator::-webkit-scrollbar-thumb {
+  background: #cbd5e0;
   border-radius: 3px;
 }
 
-.question-palette::-webkit-scrollbar-thumb {
-  background: #888;
-  border-radius: 3px;
+.question-navigator::-webkit-scrollbar-thumb:hover {
+  background: #a0aec0;
 }
 
-.question-palette::-webkit-scrollbar-thumb:hover {
-  background: #555;
-}
-
-.question-palette button {
-  min-width: 36px;
-  height: 36px;
-  border: 1px solid #ccc;
-  background-color: white;
+.question-btn {
+  min-width: 40px;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid #cbd5e0;
+  background: white;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 14px;
+  color: #4a5568;
   cursor: pointer;
-  border-radius: 8px;
-  font-weight: 500;
   transition: all 0.2s;
   flex-shrink: 0;
 }
 
-.question-palette button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+.question-btn:hover {
+  border-color: #2c5282;
+  color: #2c5282;
+  transform: translateY(-1px);
 }
 
-.question-palette button.answered {
-  background-color: #c8e6c9;
-  border-color: #81c784;
-  color: #2e7d32;
+.question-btn.answered {
+  background: #c6f6d5;
+  border-color: #38a169;
+  color: #22543d;
 }
 
-.question-palette button.current {
-  background-color: #6200ea;
-  color: white;
-  border-color: #6200ea;
-  transform: scale(1.15);
-  box-shadow: 0 2px 8px rgba(98, 0, 234, 0.3);
+.question-btn.answered:hover {
+  background: #9ae6b4;
 }
 
-.question-palette button.current.answered {
-  background-color: #4caf50;
-  border-color: #388e3c;
+.question-btn.current {
+  border: 2px solid #2c5282;
+  border-color: #2c5282;
+  color: #2c5282;
+  font-weight: 700;
 }
 
-.progress-info {
-  text-align: center;
-  padding: 5px 0;
-  font-size: 0.9rem;
-  color: #666;
+.question-btn.current.answered {
+  background: #9ae6b4;
+  border-color: #2f855a;
+  color: #22543d;
 }
 
-.answered-count {
-  font-weight: 500;
-  padding: 4px 12px;
-  background: #f0eaff;
-  border-radius: 12px;
-  display: inline-block;
+/* Progress Indicator */
+.progress-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 8px 16px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+}
+
+.progress-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #4a5568;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.progress-value {
+  font-size: 15px;
+  font-weight: 700;
+  color: #2c5282;
+  font-family: "Courier New", monospace;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .nav-container {
+    gap: 16px;
+    padding: 0 20px;
+  }
+
+  .question-navigator {
+    max-width: 400px;
+  }
 }
 
 @media (max-width: 768px) {
-  .nav-controls {
-    gap: 10px;
+  .nav-container {
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 0 16px;
   }
 
-  .question-palette {
-    max-width: calc(100vw - 150px);
+  .part-selector {
+    order: 1;
+    width: 100%;
+    justify-content: space-between;
   }
 
-  .question-palette button {
+  .part-buttons {
+    flex: 1;
+    justify-content: flex-end;
+  }
+
+  .question-navigator {
+    order: 3;
+    width: 100%;
+    max-width: none;
+  }
+
+  .progress-indicator {
+    order: 2;
+    margin-left: auto;
+  }
+
+  .part-btn,
+  .question-btn {
+    height: 36px;
+    font-size: 13px;
+  }
+
+  .part-btn {
+    width: 32px;
+  }
+
+  .question-btn {
+    min-width: 36px;
+  }
+}
+
+@media (max-width: 480px) {
+  .bottom-nav {
+    padding: 12px 0;
+  }
+
+  .nav-container {
+    padding: 0 12px;
+  }
+
+  .part-selector {
+    font-size: 12px;
+  }
+
+  .selector-label,
+  .progress-label {
+    font-size: 11px;
+  }
+
+  .progress-value {
+    font-size: 14px;
+  }
+
+  .part-btn {
+    width: 28px;
+    height: 28px;
+    font-size: 12px;
+  }
+
+  .question-btn {
     min-width: 32px;
     height: 32px;
-    font-size: 0.9rem;
+    font-size: 12px;
   }
 
-  .nav-arrow {
-    width: 36px;
-    height: 36px;
-    font-size: 1.3rem;
+  .progress-indicator {
+    padding: 6px 12px;
   }
 }
 </style>

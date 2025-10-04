@@ -2,8 +2,8 @@
 import { ref, onMounted, onUnmounted, computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import apiClient from "@/services/api";
+import { debounce } from "lodash-es";
 
-// --- COMPONENT IMPORTS ---
 import ExamBottomNav from "@/components/exam-taking/ExamBottomNav.vue";
 import TrueFalseTaker from "@/components/exam-taking/TrueFalseTaker.vue";
 import MultipleChoiceTaker from "@/components/exam-taking/MultipleChoiceTaker.vue";
@@ -13,7 +13,6 @@ import MapLabelingTaker from "@/components/exam-taking/MapLabelingTaker.vue";
 import WritingPromptTaker from "@/components/exam-taking/WritingPromptTaker.vue";
 import GenericTaker from "@/components/exam-taking/GenericTaker.vue";
 
-// --- STATE ---
 const route = useRoute();
 const router = useRouter();
 const exam = ref(null);
@@ -29,11 +28,11 @@ const audioRef = ref(null);
 const readingPassages = ref({});
 const hasAudioPlayed = ref(localStorage.getItem("hasAudioPlayed") === "true");
 
-// State for Part and Question Navigation
+const leftPanelWidth = ref(45);
+const isDragging = ref(false);
+const containerRef = ref(null);
 const activePartIndex = ref(0);
-const activeQuestionIndex = ref(0);
 
-// --- DYNAMIC COMPONENT MAPPING ---
 const questionComponentMap = {
   TRUE_FALSE_NOT_GIVEN: TrueFalseTaker,
   MULTIPLE_CHOICE_MULTIPLE_ANSWER: MultipleChoiceTaker,
@@ -44,7 +43,6 @@ const questionComponentMap = {
   WRITING_PROMPT: WritingPromptTaker,
 };
 
-// --- COMPUTED PROPERTIES ---
 const activeSection = computed(() => sections[activeSectionIndex.value]);
 
 const currentSectionQuestions = computed(() => {
@@ -71,37 +69,19 @@ const currentPartQuestions = computed(() => {
   );
 });
 
-const currentQuestion = computed(() => {
-  if (!currentPartQuestions.value.length) return null;
-  return currentPartQuestions.value[activeQuestionIndex.value];
-});
-
-// Calculate question numbers for the entire exam
 const questionNumberMap = computed(() => {
   if (!exam.value) return {};
-
   const map = {};
   let globalNumber = 1;
-
-  // Iterate through all questions in order
   exam.value.questions.forEach((qWrapper) => {
     map[qWrapper.question.id] = globalNumber;
     globalNumber++;
   });
-
   return map;
 });
 
-// Get the current question's global number
-const currentQuestionNumber = computed(() => {
-  if (!currentQuestion.value) return 0;
-  return questionNumberMap.value[currentQuestion.value.question.id] || 0;
-});
-
-// Calculate offset for current section (for ExamBottomNav)
 const sectionQuestionOffset = computed(() => {
   if (!exam.value) return 0;
-
   let offset = 0;
   for (let i = 0; i < activeSectionIndex.value; i++) {
     const sectionName = sections[i];
@@ -109,7 +89,6 @@ const sectionQuestionOffset = computed(() => {
       (q) => q.question.section === sectionName
     ).length;
   }
-
   return offset;
 });
 
@@ -118,17 +97,12 @@ const currentSectionDuration = computed(() => {
   return exam.value.sectionDurations[activeSection.value.toLowerCase()];
 });
 
-const partQuestionCounts = computed(() => {
-  const counts = {};
-  sectionParts.value.forEach((partNum) => {
-    counts[partNum] = currentSectionQuestions.value.filter(
-      (q) => q.question.partNumber === partNum
-    ).length;
-  });
-  return counts;
+const timerWarning = computed(() => {
+  if (timer.value === "N/A") return false;
+  const [minutes] = timer.value.split(":").map(Number);
+  return minutes < 5;
 });
 
-// --- LIFECYCLE HOOKS ---
 const beforeUnloadHandler = (event) => {
   event.preventDefault();
   event.returnValue = "";
@@ -141,34 +115,14 @@ onMounted(async () => {
       `/student/exams/${scheduledExamId}/start`
     );
     exam.value = response.data;
-
-    // Debug logging
-    console.log("=== EXAM STRUCTURE DEBUG ===");
-    console.log("Total questions:", exam.value.questions.length);
-    sections.forEach((section) => {
-      const sectionQs = exam.value.questions.filter(
-        (q) => q.question.section === section
-      );
-      const parts = [
-        ...new Set(sectionQs.map((q) => q.question.partNumber)),
-      ].sort();
-      console.log(
-        `${section}: ${parts.length} parts [${parts.join(", ")}], ${
-          sectionQs.length
-        } questions`
-      );
-      parts.forEach((partNum) => {
-        const partQs = sectionQs.filter(
-          (q) => q.question.partNumber === partNum
-        );
-        console.log(`  Part ${partNum}: ${partQs.length} questions`);
-      });
-    });
-    console.log("=== END DEBUG ===");
-
     prepareReadingPassages();
     startTimer();
     window.addEventListener("beforeunload", beforeUnloadHandler);
+
+    document.addEventListener("mousemove", onDrag);
+    document.addEventListener("mouseup", stopDrag);
+    document.addEventListener("touchmove", onDrag);
+    document.addEventListener("touchend", stopDrag);
   } catch (error) {
     errorMessage.value =
       error.response?.data?.error || "Failed to load the exam.";
@@ -181,18 +135,30 @@ onMounted(async () => {
 onUnmounted(() => {
   clearInterval(timerInterval);
   window.removeEventListener("beforeunload", beforeUnloadHandler);
+  document.removeEventListener("mousemove", onDrag);
+  document.removeEventListener("mouseup", stopDrag);
+  document.removeEventListener("touchmove", onDrag);
+  document.removeEventListener("touchend", stopDrag);
 });
 
-// --- METHODS ---
 function prepareReadingPassages() {
   const passages = {};
   if (!exam.value || !exam.value.questions) return;
+
   exam.value.questions.forEach((qWrapper) => {
     const question = qWrapper.question;
-    if (question.section === "READING" && question.questionSet?.passage) {
-      const passageText = question.questionSet.passage;
-      if (!passages[passageText]) passages[passageText] = [];
-      passages[passageText].push(question);
+    if (question.section === "READING" && question.questionSet?.passages) {
+      const matchingPassage = question.questionSet.passages.find(
+        (p) => p.partNumber === question.partNumber
+      );
+
+      if (matchingPassage) {
+        const passageText = matchingPassage.text;
+        if (!passages[passageText]) {
+          passages[passageText] = [];
+        }
+        passages[passageText].push(question);
+      }
     }
   });
   readingPassages.value = passages;
@@ -230,31 +196,13 @@ function forceEndSection() {
 }
 
 function updateAnswer(payload) {
-  if (!currentQuestion.value) return;
-
-  const questionId = currentQuestion.value.question.id;
-
-  // Handle different answer formats
+  const questionId = payload.questionId || payload.question?.id;
   let answerValue = payload.answer;
-
-  // Ensure we're storing the actual value, not undefined
   if (answerValue === undefined || answerValue === null) {
     console.warn(`Received undefined/null answer for question ${questionId}`);
     return;
   }
-
-  console.log(
-    `✓ Saving answer for Q${currentQuestionNumber.value} (ID: ${questionId}):`,
-    answerValue
-  );
-
-  // Store the answer
   studentAnswers.value[questionId] = answerValue;
-
-  // Log current state
-  console.log(
-    `Total answers saved: ${Object.keys(studentAnswers.value).length}`
-  );
 }
 
 function onAudioPlay() {
@@ -288,10 +236,6 @@ async function submitExam() {
     })
   );
 
-  console.log("=== SUBMITTING EXAM ===");
-  console.log(`Total answers: ${answersPayload.length}`);
-  console.log("Payload:", answersPayload);
-
   try {
     await apiClient.post(`/student/exams/${scheduledExamId}/submit`, {
       answers: answersPayload,
@@ -309,40 +253,17 @@ async function submitExam() {
 
 function goToPart(partIndex) {
   if (partIndex >= 0 && partIndex < sectionParts.value.length) {
-    console.log(`Navigating to Part ${sectionParts.value[partIndex]}`);
     activePartIndex.value = partIndex;
-    activeQuestionIndex.value = 0;
   }
 }
 
-function goToQuestion(questionIndex) {
-  if (questionIndex >= 0 && questionIndex < currentPartQuestions.value.length) {
-    console.log(
-      `Navigating to question index ${questionIndex} in current part`
-    );
-    activeQuestionIndex.value = questionIndex;
-  }
-}
-
-function previousQuestion() {
-  if (activeQuestionIndex.value > 0) {
-    activeQuestionIndex.value--;
-  } else if (activePartIndex.value > 0) {
-    activePartIndex.value--;
-    // Go to last question of previous part
-    const prevPartQuestions = currentSectionQuestions.value.filter(
-      (q) => q.question.partNumber === sectionParts.value[activePartIndex.value]
-    );
-    activeQuestionIndex.value = prevPartQuestions.length - 1;
-  }
-}
-
-function nextQuestion() {
-  if (activeQuestionIndex.value < currentPartQuestions.value.length - 1) {
-    activeQuestionIndex.value++;
-  } else if (activePartIndex.value < sectionParts.value.length - 1) {
-    activePartIndex.value++;
-    activeQuestionIndex.value = 0;
+function scrollToQuestion(questionIndex) {
+  const questionId = currentPartQuestions.value[questionIndex]?.question.id;
+  if (questionId) {
+    const element = document.getElementById(`question-${questionId}`);
+    if (element) {
+      element.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
   }
 }
 
@@ -359,7 +280,6 @@ function nextSection(isAutoAdvance = false) {
   if (activeSectionIndex.value < sections.length - 1) {
     activeSectionIndex.value++;
     activePartIndex.value = 0;
-    activeQuestionIndex.value = 0;
     isTimeUp.value = false;
     prepareReadingPassages();
     startTimer();
@@ -371,84 +291,216 @@ function nextSection(isAutoAdvance = false) {
 const getComponentForQuestion = (questionType) => {
   return questionComponentMap[questionType] || GenericTaker;
 };
+
+function startDrag(event) {
+  isDragging.value = true;
+  event.preventDefault();
+  document.body.style.cursor = "col-resize";
+  document.body.style.userSelect = "none";
+}
+
+function onDrag(event) {
+  if (!isDragging.value || !containerRef.value) return;
+
+  const clientX = event.clientX || (event.touches && event.touches[0]?.clientX);
+  if (clientX === undefined) return;
+
+  const containerRect = containerRef.value.getBoundingClientRect();
+  const newWidth = ((clientX - containerRect.left) / containerRect.width) * 100;
+
+  const clampedWidth = Math.min(Math.max(newWidth, 30), 70);
+  leftPanelWidth.value = clampedWidth;
+}
+
+function stopDrag() {
+  if (!isDragging.value) return;
+  isDragging.value = false;
+  document.body.style.cursor = "";
+  document.body.style.userSelect = "";
+}
 </script>
 
 <template>
   <div class="exam-container">
     <div v-if="loading" class="loading-container">
-      <p>Loading your exam...</p>
+      <div class="loader"></div>
+      <p class="loading-text">Loading examination...</p>
     </div>
+
     <div v-else-if="errorMessage" class="error-message">
-      <p>{{ errorMessage }}</p>
+      <div class="error-content">
+        <h2>Unable to Load Exam</h2>
+        <p>{{ errorMessage }}</p>
+        <button @click="router.push('/dashboard')" class="btn-return">
+          Return to Dashboard
+        </button>
+      </div>
     </div>
-    <div v-else-if="exam">
+
+    <div v-else-if="exam" class="exam-wrapper">
       <div v-if="isTimeUp" class="times-up-overlay">
         <div class="times-up-message">
-          <h2>Time is up for this section.</h2>
-          <p>Moving to the next section...</p>
+          <h2>Time Expired</h2>
+          <p>This section has ended. Proceeding to next section...</p>
+          <div class="spinner"></div>
         </div>
       </div>
-      <fieldset :disabled="isTimeUp">
+
+      <fieldset :disabled="isTimeUp" class="exam-fieldset">
         <header class="exam-header">
-          <h1>{{ exam.title }}</h1>
-          <div class="section-indicator">
-            Section {{ activeSectionIndex + 1 }} of 3:
-            <strong>{{ activeSection }}</strong>
+          <div class="header-content">
+            <div class="exam-info">
+              <h1 class="exam-title">{{ exam.title }}</h1>
+              <div class="section-info">
+                <span class="section-label"
+                  >Section {{ activeSectionIndex + 1 }} of 3:</span
+                >
+                <span class="section-name">{{ activeSection }}</span>
+              </div>
+            </div>
+            <div
+              class="timer-container"
+              :class="{ 'timer-warning': timerWarning }"
+            >
+              <span class="timer-label">Time Remaining</span>
+              <span class="timer-value">{{ timer }}</span>
+            </div>
           </div>
-          <div class="timer">Time Remaining: {{ timer }}</div>
         </header>
 
-        <main class="exam-body">
-          <div class="left-panel">
-            <div v-if="activeSection === 'LISTENING'">
-              <h3>Listening Section - Part {{ currentPart }}</h3>
-              <div
-                v-if="exam.audioFiles?.listening"
-                class="audio-player-container"
-              >
+        <main class="exam-body" ref="containerRef">
+          <div class="left-panel" :style="{ width: leftPanelWidth + '%' }">
+            <div v-if="activeSection === 'LISTENING'" class="panel-content">
+              <div class="panel-header">
+                <h2>Listening</h2>
+                <span class="part-label">Part {{ currentPart }}</span>
+              </div>
+              <div v-if="exam.audioFiles?.listening" class="audio-container">
                 <audio
-                  controls
+                  autoplay
                   :src="exam.audioFiles.listening"
                   ref="audioRef"
                   @play="onAudioPlay"
+                  style="display: none"
                 ></audio>
+                <div class="audio-notice">
+                  <div class="notice-icon">
+                    <svg
+                      width="24"
+                      height="24"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <path
+                        d="M9 18V5l12-2v13M9 13a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"
+                      />
+                    </svg>
+                  </div>
+                  <p>Audio playing automatically</p>
+                </div>
+                <div class="instructions-box">
+                  <h3>Instructions</h3>
+                  <ul>
+                    <li>The audio will play once only</li>
+                    <li>You cannot pause or replay</li>
+                    <li>Answer questions as you listen</li>
+                  </ul>
+                </div>
               </div>
             </div>
-            <div v-if="activeSection === 'READING'" class="passage-viewer">
-              <h3>Reading Passage(s) - Part {{ currentPart }}</h3>
-              <div
-                v-for="(questions, passageText) in readingPassages"
-                :key="passageText"
-                class="passage"
-              >
-                <p v-html="passageText.replace(/\n/g, '<br>')"></p>
+
+            <div v-if="activeSection === 'READING'" class="panel-content">
+              <div class="panel-header">
+                <h2>Reading Passage</h2>
+                <span class="part-label">Part {{ currentPart }}</span>
+              </div>
+              <div class="passage-container">
+                <div
+                  v-for="(questions, passageText, index) in readingPassages"
+                  :key="index"
+                  class="passage-box"
+                >
+                  <div class="passage-label">Passage {{ index + 1 }}</div>
+                  <div
+                    class="passage-text"
+                    v-html="passageText.replace(/\n/g, '<br>')"
+                  ></div>
+                </div>
+                <div
+                  v-if="Object.keys(readingPassages).length === 0"
+                  class="empty-state"
+                >
+                  <p>No passage available</p>
+                </div>
               </div>
             </div>
-            <div v-if="activeSection === 'WRITING'">
-              <h3>Writing Section - Task {{ currentPart }}</h3>
-              <p>
-                You have {{ currentSectionDuration }} minutes to complete the
-                writing tasks.
-              </p>
+
+            <div v-if="activeSection === 'WRITING'" class="panel-content">
+              <div class="panel-header">
+                <h2>Writing</h2>
+                <span class="part-label">Task {{ currentPart }}</span>
+              </div>
+              <div class="writing-details">
+                <div class="detail-item">
+                  <span class="detail-label">Time Allocated:</span>
+                  <span class="detail-value"
+                    >{{ currentSectionDuration }} minutes</span
+                  >
+                </div>
+                <p class="instruction-text">
+                  Complete all writing tasks in this section.
+                </p>
+              </div>
             </div>
           </div>
-          <div class="right-panel">
-            <div v-if="currentQuestion" class="question-wrapper">
-              <h4 class="question-number-display">
-                Question {{ currentQuestionNumber }}
-              </h4>
-              <component
-                :is="
-                  getComponentForQuestion(currentQuestion.question.questionType)
-                "
-                :key="currentQuestion.question.id"
-                :question="currentQuestion.question"
-                :initial-answer="studentAnswers[currentQuestion.question.id]"
-                @answer-updated="updateAnswer"
-              />
+
+          <div
+            class="divider"
+            @mousedown="startDrag"
+            @touchstart="startDrag"
+          ></div>
+
+          <div
+            class="right-panel"
+            :style="{ width: 100 - leftPanelWidth + '%' }"
+          >
+            <div class="panel-header">
+              <h2>Questions - Part {{ currentPart }}</h2>
+              <span class="question-badge"
+                >{{ currentPartQuestions.length }} Questions</span
+              >
             </div>
-            <div v-else>
-              <p>This part has no questions. Please proceed.</p>
+            <div class="questions-list">
+              <div
+                v-for="(qWrapper, index) in currentPartQuestions"
+                :key="qWrapper.question.id"
+                :id="`question-${qWrapper.question.id}`"
+                class="question-item"
+                :class="{ 'is-answered': studentAnswers[qWrapper.question.id] }"
+              >
+                <div class="question-meta">
+                  <span class="question-label"
+                    >Question
+                    {{ questionNumberMap[qWrapper.question.id] }}</span
+                  >
+                  <span
+                    v-if="studentAnswers[qWrapper.question.id]"
+                    class="status-indicator"
+                    >Answered</span
+                  >
+                </div>
+                <component
+                  :is="getComponentForQuestion(qWrapper.question.questionType)"
+                  :question="qWrapper.question"
+                  :initial-answer="studentAnswers[qWrapper.question.id]"
+                  @answer-updated="updateAnswer"
+                />
+              </div>
+              <div v-if="!currentPartQuestions.length" class="empty-state">
+                <p>No questions in this part</p>
+              </div>
             </div>
           </div>
         </main>
@@ -459,18 +511,16 @@ const getComponentForQuestion = (questionType) => {
           :section-questions="currentSectionQuestions"
           :student-answers="studentAnswers"
           :active-part-index="activePartIndex"
-          :active-question-index="activeQuestionIndex"
+          :active-question-index="0"
           :question-number-offset="sectionQuestionOffset"
           :question-number-map="questionNumberMap"
           @go-to-part="goToPart"
-          @go-to-question="goToQuestion"
-          @previous="previousQuestion"
-          @next="nextQuestion"
+          @go-to-question="scrollToQuestion"
         />
-        <button @click="nextSection()" class="finish-section-btn">
+        <button @click="nextSection()" class="finish-btn">
           {{
             activeSection === "WRITING"
-              ? "Submit Final Exam"
+              ? "Submit Exam"
               : `Finish ${activeSection} Section`
           }}
         </button>
@@ -484,183 +534,622 @@ const getComponentForQuestion = (questionType) => {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  padding-bottom: 180px;
+  background: #f5f5f5;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
+    "Ubuntu", "Cantarell", sans-serif;
 }
 
-.loading-container,
-.error-message {
+.exam-wrapper {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 50vh;
-  font-size: 1.2rem;
-}
-
-.error-message {
-  color: #d32f2f;
-}
-
-.exam-header {
-  background: #2c3e50;
-  color: white;
-  padding: 20px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 15px;
-}
-
-.exam-header h1 {
-  margin: 0;
-  font-size: 1.5rem;
-}
-
-.section-indicator {
-  font-size: 1.1rem;
-}
-
-.timer {
-  font-size: 1.2rem;
-  font-weight: bold;
-  padding: 8px 16px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-}
-
-.exam-body {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-  padding: 20px;
-  flex: 1;
-}
-
-.left-panel,
-.right-panel {
-  padding: 20px;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  overflow-y: auto;
-  max-height: calc(100vh - 300px);
-}
-
-.left-panel h3 {
-  margin-top: 0;
-  color: #2c3e50;
-  border-bottom: 2px solid #6200ea;
-  padding-bottom: 10px;
-}
-
-.audio-player-container {
-  margin-top: 20px;
-}
-
-.audio-player-container audio {
+  flex-direction: column;
+  min-height: 100vh;
+  max-width: 1800px;
+  margin: 0 auto;
   width: 100%;
 }
 
-.passage-viewer .passage {
-  line-height: 1.8;
-  font-size: 1rem;
-  margin-bottom: 20px;
-  padding: 15px;
-  background: #f9f9f9;
-  border-radius: 8px;
+/* Loading State */
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  gap: 24px;
 }
 
-.question-wrapper {
-  animation: fadeIn 0.3s ease-in;
+.loader {
+  border: 3px solid #e0e0e0;
+  border-top: 3px solid #2c5282;
+  border-radius: 50%;
+  width: 48px;
+  height: 48px;
+  animation: spin 1s linear infinite;
 }
 
-.question-number-display {
-  color: #6200ea;
-  font-size: 1.3rem;
-  margin-top: 0;
-  margin-bottom: 20px;
-  padding-bottom: 10px;
-  border-bottom: 2px solid #e0e0e0;
+.loading-text {
+  font-size: 16px;
+  color: #4a5568;
+  font-weight: 500;
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
+@keyframes spin {
   to {
-    opacity: 1;
-    transform: translateY(0);
+    transform: rotate(360deg);
   }
 }
 
-.times-up-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.9);
+/* Error State */
+.error-message {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 9999;
+  min-height: 100vh;
+  padding: 20px;
+}
+
+.error-content {
+  text-align: center;
+  max-width: 500px;
+  background: white;
+  padding: 48px 32px;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+}
+
+.error-content h2 {
+  margin: 0 0 16px 0;
+  color: #1a202c;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.error-content p {
+  margin: 0 0 32px 0;
+  color: #4a5568;
+  line-height: 1.6;
+}
+
+.btn-return {
+  background: #2c5282;
+  color: white;
+  border: none;
+  padding: 12px 32px;
+  border-radius: 4px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-return:hover {
+  background: #2a4365;
+}
+
+/* Time's Up Overlay */
+.times-up-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
 }
 
 .times-up-message {
   background: white;
-  padding: 40px;
-  border-radius: 12px;
+  padding: 48px;
+  border-radius: 4px;
   text-align: center;
-  animation: bounceIn 0.5s ease-out;
-}
-
-@keyframes bounceIn {
-  0% {
-    transform: scale(0.5);
-    opacity: 0;
-  }
-  50% {
-    transform: scale(1.05);
-  }
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
+  max-width: 480px;
 }
 
 .times-up-message h2 {
-  color: #d32f2f;
-  margin-top: 0;
+  margin: 0 0 16px 0;
+  color: #1a202c;
+  font-size: 24px;
+  font-weight: 600;
 }
 
-.exam-footer {
-  background: #f8f9fa;
-  padding: 20px;
-  border-top: 2px solid #ddd;
+.times-up-message p {
+  margin: 0 0 24px 0;
+  color: #4a5568;
+  line-height: 1.6;
 }
 
-.finish-section-btn {
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #e2e8f0;
+  border-top-color: #2c5282;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto;
+}
+
+/* Exam Fieldset */
+.exam-fieldset {
+  border: none;
+  padding: 0;
+  margin: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Header */
+.exam-header {
+  background: #1a202c;
+  color: white;
+  padding: 20px 32px;
+  border-bottom: 1px solid #2d3748;
+}
+
+.header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  max-width: 1800px;
+  margin: 0 auto;
+}
+
+.exam-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.exam-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: white;
+  letter-spacing: -0.01em;
+}
+
+.section-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.section-label {
+  color: #a0aec0;
+  font-weight: 400;
+}
+
+.section-name {
+  color: #63b3ed;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.timer-container {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  padding: 12px 20px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  min-width: 140px;
+}
+
+.timer-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #cbd5e0;
+  font-weight: 500;
+}
+
+.timer-value {
+  font-size: 28px;
+  font-weight: 600;
+  font-family: "Courier New", monospace;
+  color: white;
+  line-height: 1;
+}
+
+.timer-warning {
+  border-color: #fc8181;
+}
+
+.timer-warning .timer-value {
+  color: #fc8181;
+}
+
+/* Main Body */
+.exam-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  background: #f5f5f5;
+  padding: 24px;
+  gap: 0;
+  max-width: 1800px;
+  margin: 0 auto;
   width: 100%;
-  padding: 15px;
-  background: #28a745;
+}
+
+.left-panel,
+.right-panel {
+  background: white;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.panel-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #fafafa;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.panel-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1a202c;
+}
+
+.part-label {
+  font-size: 14px;
+  color: #2c5282;
+  font-weight: 600;
+  padding: 4px 12px;
+  background: #ebf8ff;
+  border-radius: 3px;
+}
+
+.question-badge {
+  font-size: 13px;
+  color: #4a5568;
+  font-weight: 500;
+  padding: 4px 12px;
+  background: #edf2f7;
+  border-radius: 3px;
+}
+
+.panel-content {
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Audio Container */
+.audio-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.audio-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: #ebf8ff;
+  border-left: 3px solid #4299e1;
+  border-radius: 4px;
+}
+
+.notice-icon {
+  color: #2c5282;
+  flex-shrink: 0;
+}
+
+.audio-notice p {
+  margin: 0;
+  color: #2c5282;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.instructions-box {
+  padding: 20px;
+  background: #fafafa;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+}
+
+.instructions-box h3 {
+  margin: 0 0 12px 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1a202c;
+}
+
+.instructions-box ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.instructions-box li {
+  margin-bottom: 8px;
+  color: #4a5568;
+  line-height: 1.6;
+  font-size: 14px;
+}
+
+.instructions-box li:last-child {
+  margin-bottom: 0;
+}
+
+/* Reading Passages */
+.passage-container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.passage-box {
+  padding: 24px;
+  background: #fafafa;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+}
+
+.passage-label {
+  display: inline-block;
+  padding: 4px 12px;
+  background: #2c5282;
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 3px;
+  margin-bottom: 16px;
+}
+
+.passage-text {
+  line-height: 1.8;
+  color: #2d3748;
+  font-size: 15px;
+}
+
+/* Writing Details */
+.writing-details {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.detail-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background: #fafafa;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+}
+
+.detail-label {
+  font-weight: 600;
+  color: #1a202c;
+  font-size: 14px;
+}
+
+.detail-value {
+  color: #2c5282;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.instruction-text {
+  margin: 0;
+  color: #4a5568;
+  line-height: 1.6;
+  font-size: 14px;
+}
+
+/* Divider */
+.divider {
+  width: 16px;
+  cursor: col-resize;
+  background: #f5f5f5;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.divider::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 4px;
+  height: 40px;
+  background: #cbd5e0;
+  border-radius: 2px;
+  transition: background 0.2s;
+}
+
+.divider:hover::before {
+  background: #2c5282;
+}
+
+/* Questions List */
+.questions-list {
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.question-item {
+  padding: 24px;
+  margin-bottom: 20px;
+  background: #fafafa;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  transition: all 0.2s;
+  border-left: 3px solid transparent;
+}
+
+.question-item:hover {
+  border-left-color: #2c5282;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.question-item.is-answered {
+  border-left-color: #38a169;
+  background: #f0fff4;
+}
+
+.question-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.question-label {
+  font-size: 15px;
+  font-weight: 600;
+  color: #2c5282;
+}
+
+.status-indicator {
+  font-size: 12px;
+  font-weight: 600;
+  color: #38a169;
+  padding: 4px 10px;
+  background: #c6f6d5;
+  border-radius: 3px;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 48px 24px;
+  color: #718096;
+  font-style: italic;
+}
+
+.empty-state p {
+  margin: 0;
+}
+
+/* Footer */
+.exam-footer {
+  background: white;
+  border-top: 1px solid #e2e8f0;
+  padding: 16px 32px;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.finish-btn {
+  width: 100%;
+  padding: 14px 24px;
+  background: #2c5282;
   color: white;
   border: none;
-  border-radius: 8px;
-  font-size: 16px;
-  font-weight: bold;
+  border-radius: 4px;
+  font-size: 15px;
+  font-weight: 600;
   cursor: pointer;
-  margin-top: 15px;
-  transition: background-color 0.2s;
+  transition: background 0.2s;
+  margin-top: 12px;
 }
 
-.finish-section-btn:hover {
-  background: #218838;
+.finish-btn:hover {
+  background: #2a4365;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f5f5f5;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e0;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a0aec0;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+  .exam-body {
+    flex-direction: column;
+    padding: 16px;
+  }
+
+  .left-panel,
+  .right-panel {
+    width: 100% !important;
+    margin-bottom: 16px;
+  }
+
+  .divider {
+    display: none;
+  }
+
+  .questions-list {
+    max-height: 50vh;
+  }
 }
 
 @media (max-width: 768px) {
-  .exam-body {
-    grid-template-columns: 1fr;
+  .exam-header {
+    padding: 16px 20px;
+  }
+
+  .header-content {
+    flex-direction: column;
+    gap: 16px;
+    align-items: flex-start;
+  }
+
+  .timer-container {
+    align-self: stretch;
+    align-items: center;
+  }
+
+  .exam-title {
+    font-size: 18px;
+  }
+
+  .panel-header {
+    padding: 16px 20px;
+  }
+
+  .panel-header h2 {
+    font-size: 16px;
+  }
+
+  .panel-content {
+    padding: 20px;
+  }
+
+  .question-item {
+    padding: 20px;
+  }
+
+  .exam-footer {
+    padding: 12px 20px;
   }
 }
 </style>
