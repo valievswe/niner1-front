@@ -1,126 +1,244 @@
 <script setup>
-import { ref } from "vue";
+import { ref, onMounted } from "vue";
 
-const instructions = ref("Match each statement with the correct person.");
-const prompts = ref([{ id: "p_1", text: "" }]);
+const props = defineProps({
+  initialData: { type: Object, default: null },
+});
+
+const instructions = ref("Choose the correct letter, A, B, or C.");
+const passage = ref("");
+const prompt = ref("Which characteristic is mentioned about the subject?");
 const options = ref([{ id: "o_a", text: "" }]);
-const answers = ref({});
+const correctOptionIds = ref([]);
 
-// --- NEW DYNAMIC METHODS ---
-function addPrompt() {
-  const newId = `p_${prompts.value.length + 1}`;
-  prompts.value.push({ id: newId, text: "" });
-}
-function removePrompt(index) {
-  prompts.value.splice(index, 1);
-  prompts.value.forEach((p, i) => {
-    p.id = `p_${i + 1}`;
-  });
-}
+onMounted(() => {
+  if (props.initialData) {
+    const { content, answer } = props.initialData;
+
+    instructions.value = content.instructions || "";
+    passage.value = content.passage || "";
+    prompt.value = content.prompt || "";
+    options.value =
+      content.options && content.options.length
+        ? content.options
+        : [{ id: "o_a", text: "" }];
+    correctOptionIds.value = answer.correctOptionIds || [];
+  }
+});
 
 function addOption() {
-  // Use letters for option IDs: a, b, c, d...
-  const newLetter = String.fromCharCode(97 + options.value.length); // 97 is ASCII for 'a'
+  const newLetter = String.fromCharCode(97 + options.value.length);
   const newId = `o_${newLetter}`;
   options.value.push({ id: newId, text: "" });
 }
 function removeOption(index) {
-  options.value.splice(index, 1);
+  const removedOption = options.value.splice(index, 1)[0];
+  const correctIndex = correctOptionIds.value.indexOf(removedOption.id);
+  if (correctIndex > -1) {
+    correctOptionIds.value.splice(correctIndex, 1);
+  }
   options.value.forEach((o, i) => {
     o.id = `o_${String.fromCharCode(97 + i)}`;
   });
 }
 
 const getPayload = () => {
-  const content = {
-    instructions: instructions.value,
-    prompts: prompts.value.filter((p) => p.text.trim()),
-    options: options.value.filter((o) => o.text.trim()),
+  return {
+    content: {
+      instructions: instructions.value,
+      passage: passage.value,
+      prompt: prompt.value,
+      options: options.value.filter((o) => o.text.trim()),
+    },
+    answer: {
+      correctOptionIds: correctOptionIds.value,
+    },
   };
-  const answer = answers.value;
-  return { content, answer };
 };
 
 defineExpose({ getPayload });
 </script>
 
 <template>
-  <div class="form-section">
-    <h4>Question Content</h4>
-    <div class="form-group">
-      <label>Instructions</label>
-      <input type="text" v-model="instructions" />
-    </div>
-    <div class="form-group">
-      <label>Prompts (e.g., questions or statements)</label>
-      <div v-for="(prompt, index) in prompts" :key="index" class="dynamic-row">
-        <input
-          type="text"
-          v-model="prompt.text"
-          :placeholder="`Prompt ${prompt.id}`"
-        />
-        <button
-          v-if="prompts.length > 1"
-          type="button"
-          @click="removePrompt(index)"
-        >
-          -
-        </button>
+  <div class="form-container">
+    <div class="card">
+      <div class="card-header">
+        <h4 class="card-title">Question Content</h4>
       </div>
-      <button type="button" @click="addPrompt">+ Add Prompt</button>
-    </div>
-    <div class="form-group">
-      <label>Options (to match against)</label>
-      <div v-for="(option, index) in options" :key="index" class="dynamic-row">
-        <input
-          type="text"
-          v-model="option.text"
-          :placeholder="`Option ${option.id}`"
-        />
-        <button
-          v-if="options.length > 1"
-          type="button"
-          @click="removeOption(index)"
-        >
-          -
-        </button>
+      <div class="card-body">
+        <div class="form-group">
+          <label class="form-label" for="matching-instructions"
+            >Instructions</label
+          >
+          <input
+            id="matching-instructions"
+            type="text"
+            v-model="instructions"
+            class="form-input"
+          />
+        </div>
+
+        <div class="matching-grid">
+          <div class="form-group">
+            <label class="form-label">Prompts (Statements to match)</label>
+            <div class="dynamic-list">
+              <div
+                v-for="(prompt, index) in prompts"
+                :key="index"
+                class="dynamic-row"
+              >
+                <span class="row-id">{{ prompt.id }}:</span>
+                <input type="text" v-model="prompt.text" class="form-input" />
+                <!-- SEMANTIC BUTTON COLOR: Destructive action -->
+                <button
+                  v-if="prompts.length > 1"
+                  type="button"
+                  @click="removePrompt(index)"
+                  class="btn btn-danger btn-sm"
+                >
+                  &ndash;
+                </button>
+              </div>
+            </div>
+            <!-- SEMANTIC BUTTON COLOR: Additive/neutral action -->
+            <button
+              type="button"
+              @click="addPrompt"
+              class="btn btn-secondary mt-4"
+            >
+              + Add Prompt
+            </button>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Options (Choices to match from)</label>
+            <div class="dynamic-list">
+              <div
+                v-for="(option, index) in options"
+                :key="index"
+                class="dynamic-row"
+              >
+                <span class="row-id">{{ option.id }}:</span>
+                <input type="text" v-model="option.text" class="form-input" />
+                <!-- SEMANTIC BUTTON COLOR: Destructive action -->
+                <button
+                  v-if="options.length > 1"
+                  type="button"
+                  @click="removeOption(index)"
+                  class="btn btn-danger btn-sm"
+                >
+                  &ndash;
+                </button>
+              </div>
+            </div>
+            <!-- SEMANTIC BUTTON COLOR: Additive/neutral action -->
+            <button
+              type="button"
+              @click="addOption"
+              class="btn btn-secondary mt-4"
+            >
+              + Add Option
+            </button>
+          </div>
+        </div>
       </div>
-      <button type="button" @click="addOption">+ Add Option</button>
     </div>
-    <h4>Answer Key</h4>
-    <div class="form-group">
-      <div v-for="prompt in prompts" :key="prompt.id">
-        <label>Answer for Prompt {{ prompt.id }}:</label>
-        <select v-model="answers[prompt.id]">
-          <option :value="undefined">-- Select --</option>
-          <option v-for="option in options" :key="option.id" :value="option.id">
-            {{ option.text || option.id }}
-          </option>
-        </select>
+
+    <div class="card">
+      <div class="card-header">
+        <h4 class="card-title">Answer Key</h4>
+      </div>
+      <div class="card-body">
+        <p class="text-secondary mb-4">
+          Match each prompt to the correct option. Prompts and options must have
+          text before they can be matched.
+        </p>
+        <div class="answer-grid">
+          <div
+            v-for="prompt in prompts.filter((p) => p.text)"
+            :key="prompt.id"
+            class="answer-row"
+          >
+            <label :for="`answer-${prompt.id}`" class="form-label">
+              {{ prompt.text }} ({{ prompt.id }})
+            </label>
+            <select v-model="answers[prompt.id]" class="form-select">
+              <option :value="undefined">-- Select Option --</option>
+              <option
+                v-for="option in options.filter((o) => o.text)"
+                :key="option.id"
+                :value="option.id"
+              >
+                {{ option.text }} ({{ option.id }})
+              </option>
+            </select>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* Styles can be shared */
-.form-section {
-  margin-top: 20px;
-  padding: 15px;
-  border: 1px solid #e0e0e0;
+.form-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
 }
-.form-group {
-  margin-bottom: 15px;
+
+.matching-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-6);
+  margin-top: var(--space-4);
 }
-label {
-  display: block;
-  margin-bottom: 5px;
-  font-weight: bold;
+
+@media (min-width: 1024px) {
+  .matching-grid {
+    grid-template-columns: 1fr 1fr;
+  }
 }
-input,
-select {
-  width: 100%;
-  padding: 8px;
-  margin-bottom: 5px;
+
+.dynamic-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.dynamic-row {
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.row-id {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+.answer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--space-5);
+}
+
+.answer-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.answer-row .form-label {
+  margin: 0;
+  font-weight: var(--font-medium);
+}
+
+.mt-4 {
+  margin-top: var(--space-4);
+}
+.mb-4 {
+  margin-bottom: var(--space-4);
 }
 </style>

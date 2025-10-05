@@ -1,4 +1,3 @@
-<!-- src/components/QuestionPreview.vue -->
 <script setup>
 import { computed } from "vue";
 
@@ -9,7 +8,6 @@ const props = defineProps({
   },
 });
 
-// This is the core logic. It generates a preview based on question type.
 const previewText = computed(() => {
   if (!props.question || !props.question.content) return "No content";
 
@@ -18,53 +16,77 @@ const previewText = computed(() => {
 
   switch (props.question.questionType) {
     case "TRUE_FALSE_NOT_GIVEN":
-      // Show the first statement's text
-      text = content.statements?.[0]?.text || "No statements";
+      text = content.statements?.[0]?.text || "No statements available";
       break;
     case "MULTIPLE_CHOICE_MULTIPLE_ANSWER":
-      // Show the main prompt
-      text = content.prompt || "No prompt";
+      text = content.prompt || "No prompt available";
       break;
     case "GAP_FILLING":
-      // Show the instructions
-      text = content.instructions || "No instructions";
+    case "MAP_LABELING":
+    case "MATCHING":
+      text = content.instructions || "No instructions available";
       break;
-    // Add cases for your other question types here...
+    case "WRITING_PROMPT":
+      text = content.prompt || "No prompt available";
+      break;
     default:
-      text = "Preview not available";
+      text = "Preview not available for this type";
   }
 
-  // Truncate the text if it's too long
-  return text.length > 50 ? text.substring(0, 50) + "..." : text;
+  return text.length > 70 ? text.substring(0, 70) + "..." : text;
 });
 </script>
 
 <template>
-  <span class="preview-container">
-    <strong class="type">{{ question.questionType }}</strong>
+  <div class="preview-container">
+    <span class="type-badge">{{
+      question.questionType.replace(/_/g, " ")
+    }}</span>
     <span class="section">({{ question.section }})</span>
-    <span class="preview-text">- "{{ previewText }}"</span>
-  </span>
+    <span class="preview-text">&ldquo;{{ previewText }}&rdquo;</span>
+  </div>
 </template>
 
 <style scoped>
 .preview-container {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-base);
+  color: var(--text-primary);
 }
-.type {
-  color: #333;
+
+/* 
+  IMPROVEMENT:
+  Styled the type as a badge for better visual distinction,
+  using design system colors and properties.
+*/
+.type-badge {
+  flex-shrink: 0;
+  font-family: var(--font-primary);
+  font-weight: var(--font-semibold);
+  font-size: var(--text-xs);
+  color: var(--color-primary-800);
+  background-color: var(--color-primary-100);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-base);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
 }
+
 .section {
-  color: #777;
-  font-size: 0.9em;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
 }
+
 .preview-text {
-  color: #555;
+  color: var(--text-secondary);
   font-style: italic;
+
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 </style>

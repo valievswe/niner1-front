@@ -1,146 +1,229 @@
-<!-- src/components/question-forms/MultipleChoiceForm.vue -->
 <script setup>
-import { ref } from "vue";
+import { ref, onMounted } from "vue";
 
-// --- STATE ---
-const instructions = ref("");
-const passage = ref(""); // Optional, for reading passages
-const prompt = ref(""); // The main question, e.g., "Which TWO of the following are mentioned?"
-const options = ref([
-  { id: "opt_1", text: "", isCorrect: false },
-  { id: "opt_2", text: "", isCorrect: false },
-]);
+const props = defineProps({
+  initialData: { type: Object, default: null },
+});
 
-// --- METHODS ---
+const instructions = ref("Choose the correct letter, A, B, or C.");
+const passage = ref("");
+const prompt = ref("Which characteristic is mentioned about the subject?");
+const options = ref([{ id: "o_a", text: "" }]);
+const correctOptionIds = ref([]);
+
+onMounted(() => {
+  if (props.initialData) {
+    const { content, answer } = props.initialData;
+    instructions.value = content.instructions || "";
+    passage.value = content.passage || "";
+    prompt.value = content.prompt || "";
+    options.value =
+      content.options && content.options.length
+        ? content.options
+        : [{ id: "o_a", text: "" }];
+    correctOptionIds.value = answer.correctOptionIds || [];
+  }
+});
+
 function addOption() {
-  const newId = `opt_${options.value.length + 1}`;
-  options.value.push({ id: newId, text: "", isCorrect: false });
+  const newLetter = String.fromCharCode(97 + options.value.length);
+  const newId = `o_${newLetter}`;
+  options.value.push({ id: newId, text: "" });
 }
-
 function removeOption(index) {
-  options.value.splice(index, 1);
-  // Re-index IDs to keep them sequential
-  options.value.forEach((opt, i) => {
-    opt.id = `opt_${i + 1}`;
+  const removedOption = options.value.splice(index, 1)[0];
+  const correctIndex = correctOptionIds.value.indexOf(removedOption.id);
+  if (correctIndex > -1) {
+    correctOptionIds.value.splice(correctIndex, 1);
+  }
+  options.value.forEach((o, i) => {
+    o.id = `o_${String.fromCharCode(97 + i)}`;
   });
 }
 
 const getPayload = () => {
-  const content = {
-    instructions: instructions.value,
-    passage: passage.value,
-    prompt: prompt.value,
-    // The 'options' array in the content only needs the id and text
-    options: options.value.map((opt) => ({ id: opt.id, text: opt.text })),
+  return {
+    content: {
+      instructions: instructions.value,
+      passage: passage.value,
+      prompt: prompt.value,
+      options: options.value.filter((o) => o.text.trim()),
+    },
+    answer: {
+      correctOptionIds: correctOptionIds.value,
+    },
   };
-
-  const answer = {
-    // The 'answer' object contains an array of the IDs of the correct options
-    correctOptionIds: options.value
-      .filter((opt) => opt.isCorrect)
-      .map((opt) => opt.id),
-  };
-
-  return { content, answer };
 };
 
-// Expose the method for the parent
 defineExpose({ getPayload });
 </script>
 
 <template>
-  <div class="form-section">
-    <h4>Question Content</h4>
-    <div class="form-group">
-      <label>Instructions</label>
-      <input
-        type="text"
-        v-model="instructions"
-        placeholder="e.g., Choose TWO letters, A-E."
-      />
-    </div>
-
-    <div class="form-group">
-      <label>Passage Text (Optional - for Reading)</label>
-      <textarea
-        v-model="passage"
-        rows="7"
-        placeholder="Leave blank for Listening questions."
-      ></textarea>
-    </div>
-
-    <div class="form-group">
-      <label>Question Prompt</label>
-      <input
-        type="text"
-        v-model="prompt"
-        placeholder="e.g., Which TWO advantages of the new library are mentioned?"
-      />
-    </div>
-
-    <div class="form-group">
-      <label>Options</label>
-      <div
-        v-for="(option, index) in options"
-        :key="option.id"
-        class="option-row"
-      >
-        <span>{{ option.id }}:</span>
-        <input
-          type="text"
-          v-model="option.text"
-          placeholder="Enter option text..."
-        />
-        <label class="checkbox-label">
-          <input type="checkbox" v-model="option.isCorrect" /> Correct
-        </label>
-        <button
-          v-if="options.length > 2"
-          type="button"
-          @click="removeOption(index)"
-        >
-          -
-        </button>
+  <div class="form-container">
+    <div class="card">
+      <div class="card-header">
+        <h4 class="card-title">Question Content</h4>
       </div>
-      <button type="button" @click="addOption">+ Add Option</button>
+      <div class="card-body">
+        <div class="form-group">
+          <label class="form-label" for="mc-instructions">Instructions</label>
+          <input
+            id="mc-instructions"
+            type="text"
+            v-model="instructions"
+            class="form-input"
+          />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="mc-passage">Passage (Optional)</label>
+          <textarea
+            id="mc-passage"
+            v-model="passage"
+            class="form-textarea"
+            rows="5"
+          ></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="mc-prompt">Prompt / Question</label>
+          <input
+            id="mc-prompt"
+            type="text"
+            v-model="prompt"
+            class="form-input"
+          />
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h4 class="card-title">Options & Answer Key</h4>
+      </div>
+      <div class="card-body">
+        <label class="form-label">
+          Define Options (Check the box for correct answers)
+        </label>
+        <div class="options-list">
+          <div
+            v-for="(option, index) in options"
+            :key="index"
+            class="option-row"
+          >
+            <label class="checkbox-label">
+              <input
+                type="checkbox"
+                :value="option.id"
+                v-model="correctOptionIds"
+              />
+              <span class="custom-checkbox"></span>
+            </label>
+            <input
+              type="text"
+              v-model="option.text"
+              class="form-input"
+              :placeholder="`Text for Option ${option.id}`"
+            />
+            <!-- 
+              SEMANTIC BUTTON COLOR:
+              Using 'btn-danger' because removing an item is a destructive action.
+            -->
+            <button
+              v-if="options.length > 1"
+              type="button"
+              @click="removeOption(index)"
+              class="btn btn-danger btn-sm"
+            >
+              &ndash;
+            </button>
+          </div>
+        </div>
+        <div class="add-button-container">
+          <!-- 
+            SEMANTIC BUTTON COLOR:
+            Using 'btn-secondary' as this is a neutral, additive action.
+          -->
+          <button type="button" @click="addOption" class="btn btn-secondary">
+            + Add Option
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* You can reuse styles from other form components */
-.form-section {
-  margin-top: 20px;
-  padding: 15px;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-}
-.form-group {
-  margin-bottom: 15px;
-}
-label {
-  display: block;
-  margin-bottom: 5px;
-  font-weight: bold;
-}
-input[type="text"],
-textarea {
-  width: 100%;
-  padding: 8px;
-}
-.option-row {
+.form-container {
   display: flex;
-  gap: 10px;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.options-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.option-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto; /* Checkbox | Input | Button */
   align-items: center;
-  margin-bottom: 10px;
+  gap: var(--space-4);
 }
-.option-row input[type="text"] {
-  flex-grow: 1;
+
+.add-button-container {
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border-primary);
 }
+
+/* --- Custom Checkbox Styles (for answer key) --- */
+/* This ensures the admin sees the same control as the student */
 .checkbox-label {
   display: flex;
   align-items: center;
-  gap: 5px;
-  white-space: nowrap;
+  justify-content: center;
+  cursor: pointer;
+  height: 40px; /* Aligns with form input height */
+}
+
+.checkbox-label input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+}
+
+.custom-checkbox {
+  height: 24px;
+  width: 24px;
+  background-color: var(--bg-primary);
+  border: var(--border-width-thick) solid var(--border-primary);
+  border-radius: var(--radius-base);
+  display: grid;
+  place-content: center;
+  transition: all var(--transition-fast);
+}
+
+.checkbox-label:hover .custom-checkbox {
+  border-color: var(--border-secondary);
+}
+
+.checkbox-label input:checked + .custom-checkbox {
+  background-color: var(--color-primary-600);
+  border-color: var(--color-primary-600);
+}
+
+.custom-checkbox::after {
+  content: "";
+  position: absolute;
+  display: none;
+  width: 6px;
+  height: 12px;
+  border: solid white;
+  border-width: 0 3px 3px 0;
+  transform: rotate(45deg);
+}
+
+.checkbox-label input:checked + .custom-checkbox::after {
+  display: block;
 }
 </style>

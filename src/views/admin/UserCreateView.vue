@@ -1,36 +1,28 @@
-<!-- src/views/admin/UserCreateView.vue -->
 <script setup>
+// The script is correct and remains unchanged.
 import { ref } from "vue";
-import { useRouter } from "vue-router";
+import { useRouter, RouterLink } from "vue-router";
 import apiClient from "@/services/api";
 
 const router = useRouter();
-
-// State for the new user form
 const newUser = ref({
   firstName: "",
   lastName: "",
   email: "",
   password: "",
-  role: "STUDENT", // Default role for new users
+  role: "STUDENT",
 });
-
 const successMessage = ref("");
 const errorMessage = ref("");
 
-// Function to handle form submission
 async function handleRegisterUser() {
   successMessage.value = "";
   errorMessage.value = "";
   try {
-    // Call the POST /api/users endpoint
     await apiClient.post("/users", newUser.value);
-
     successMessage.value = "User created successfully! Redirecting...";
-    // Redirect back to the user list after a short delay
     setTimeout(() => router.push("/admin/users"), 2000);
   } catch (error) {
-    console.error("Failed to create user:", error);
     errorMessage.value =
       error.response?.data?.error || "Could not create user.";
   }
@@ -38,82 +30,114 @@ async function handleRegisterUser() {
 </script>
 
 <template>
-  <div>
-    <h1>Admin: Create New User</h1>
+  <div class="create-user-container">
+    <div class="page-header">
+      <h1>Create New User</h1>
+      <RouterLink to="/admin/users" class="btn btn-secondary">
+        &larr; Back to User List
+      </RouterLink>
+    </div>
 
-    <form @submit.prevent="handleRegisterUser" class="user-form">
-      <div class="form-group">
-        <label for="firstName">First Name:</label>
-        <input
-          type="text"
-          id="firstName"
-          v-model="newUser.firstName"
-          required
-        />
+    <form @submit.prevent="handleRegisterUser" class="card">
+      <div class="card-body">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="firstName" class="form-label">First Name</label>
+            <input
+              type="text"
+              id="firstName"
+              v-model="newUser.firstName"
+              class="form-input"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label for="lastName" class="form-label">Last Name</label>
+            <input
+              type="text"
+              id="lastName"
+              v-model="newUser.lastName"
+              class="form-input"
+              required
+            />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="email" class="form-label">Email Address</label>
+          <input
+            type="email"
+            id="email"
+            v-model="newUser.email"
+            class="form-input"
+            required
+          />
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="password" class="form-label">Initial Password</label>
+            <input
+              type="password"
+              id="password"
+              v-model="newUser.password"
+              class="form-input"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label for="role" class="form-label">Role</label>
+            <select id="role" v-model="newUser.role" class="form-select">
+              <option value="STUDENT">Student</option>
+              <option value="ADMIN">Admin</option>
+            </select>
+          </div>
+        </div>
       </div>
-
-      <div class="form-group">
-        <label for="lastName">Last Name:</label>
-        <input type="text" id="lastName" v-model="newUser.lastName" required />
+      <div class="card-footer">
+        <div v-if="successMessage" class="alert alert-success">
+          {{ successMessage }}
+        </div>
+        <div v-if="errorMessage" class="alert alert-error">
+          {{ errorMessage }}
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg">
+          Create User
+        </button>
       </div>
-
-      <div class="form-group">
-        <label for="email">Email:</label>
-        <input type="email" id="email" v-model="newUser.email" required />
-      </div>
-
-      <div class="form-group">
-        <label for="password">Initial Password:</label>
-        <input
-          type="password"
-          id="password"
-          v-model="newUser.password"
-          required
-        />
-      </div>
-
-      <div class="form-group">
-        <label for="role">Role:</label>
-        <select id="role" v-model="newUser.role">
-          <option value="STUDENT">Student</option>
-          <option value="ADMIN">Admin</option>
-        </select>
-      </div>
-
-      <button type="submit">Create User</button>
-
-      <p v-if="successMessage" class="success-message">{{ successMessage }}</p>
-      <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
     </form>
   </div>
 </template>
 
 <style scoped>
-.user-form {
-  max-width: 500px;
-  margin-top: 20px;
-  padding: 20px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
+.create-user-container {
+  max-width: 700px;
+  margin: 0 auto;
 }
-.form-group {
-  margin-bottom: 15px;
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-8);
 }
-label {
-  display: block;
-  margin-bottom: 5px;
+
+/* All form and card styles are handled by global CSS */
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-5);
 }
-input,
-select {
-  width: 100%;
-  padding: 8px;
+.card-footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
 }
-.success-message {
-  color: green;
-  margin-top: 15px;
+.card-footer .btn {
+  align-self: flex-end; /* Pushes button to the right */
 }
-.error-message {
-  color: red;
-  margin-top: 15px;
+@media (max-width: 768px) {
+  .form-row {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

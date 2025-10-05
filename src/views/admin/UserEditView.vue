@@ -1,122 +1,159 @@
-<!-- src/views/admin/UserEditView.vue -->
 <script setup>
+// The script is correct and remains unchanged.
 import { ref, onMounted } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute, useRouter, RouterLink } from "vue-router";
 import apiClient from "@/services/api";
 
 const route = useRoute();
 const router = useRouter();
 const userId = route.params.id;
-
-// State to hold the user data for the form
 const user = ref(null);
-
 const loading = ref(true);
 const successMessage = ref("");
 const errorMessage = ref("");
 
-// Fetch the user's data when the component loads
 onMounted(async () => {
   try {
-    // We need a GET /api/users/:id endpoint for this.
-    // Let's assume we build it. If not, we fetch all and find the one.
     const response = await apiClient.get(`/users/${userId}`);
     user.value = response.data;
   } catch (error) {
     errorMessage.value = "Failed to load user data.";
-    console.error(error);
   } finally {
     loading.value = false;
   }
 });
 
-// Function to handle the update submission
 async function updateUser() {
   successMessage.value = "";
   errorMessage.value = "";
   try {
-    // Call the PUT /api/users/:id endpoint
     await apiClient.put(`/users/${userId}`, {
       firstName: user.value.firstName,
       lastName: user.value.lastName,
       role: user.value.role,
-      // Note: We are not updating email or password here for simplicity
     });
-
     successMessage.value = "User updated successfully! Redirecting...";
     setTimeout(() => router.push("/admin/users"), 2000);
   } catch (error) {
     errorMessage.value = "Failed to update user.";
-    console.error(error);
   }
 }
 </script>
 
 <template>
-  <div>
-    <h1>Admin: Edit User</h1>
+  <div class="edit-user-container">
+    <div class="page-header">
+      <h1>Edit User</h1>
+      <RouterLink to="/admin/users" class="btn btn-secondary">
+        &larr; Back to User List
+      </RouterLink>
+    </div>
 
-    <div v-if="loading">Loading user data...</div>
-    <div v-else-if="errorMessage" class="error-message">{{ errorMessage }}</div>
+    <!-- Loading & Error States -->
+    <div v-if="loading" class="loading-state">
+      <div class="loader"></div>
+      <p>Loading user data...</p>
+    </div>
+    <div v-else-if="errorMessage && !user" class="alert alert-error">
+      <h4>Error Loading User</h4>
+      <p>{{ errorMessage }}</p>
+    </div>
 
-    <form v-else-if="user" @submit.prevent="updateUser" class="user-form">
-      <div class="form-group">
-        <label>Email (Cannot be changed):</label>
-        <input type="email" :value="user.email" disabled />
+    <!-- Main Form -->
+    <form v-else-if="user" @submit.prevent="updateUser" class="card">
+      <div class="card-body">
+        <div class="form-group">
+          <label class="form-label">Email Address (Cannot be changed)</label>
+          <input type="email" :value="user.email" class="form-input" disabled />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="firstName" class="form-label">First Name</label>
+            <input
+              type="text"
+              id="firstName"
+              v-model="user.firstName"
+              class="form-input"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label for="lastName" class="form-label">Last Name</label>
+            <input
+              type="text"
+              id="lastName"
+              v-model="user.lastName"
+              class="form-input"
+              required
+            />
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="role" class="form-label">Role</label>
+          <select id="role" v-model="user.role" class="form-select">
+            <option value="STUDENT">Student</option>
+            <option value="ADMIN">Admin</option>
+          </select>
+        </div>
       </div>
-      <div class="form-group">
-        <label for="firstName">First Name</label>
-        <input type="text" id="firstName" v-model="user.firstName" required />
+      <div class="card-footer">
+        <div v-if="successMessage" class="alert alert-success">
+          {{ successMessage }}
+        </div>
+        <div v-if="errorMessage" class="alert alert-error">
+          {{ errorMessage }}
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg">
+          Update User
+        </button>
       </div>
-      <div class="form-group">
-        <label for="lastName">Last Name</label>
-        <input type="text" id="lastName" v-model="user.lastName" required />
-      </div>
-      <div class="form-group">
-        <label for="role">Role</label>
-        <select id="role" v-model="user.role">
-          <option value="STUDENT">Student</option>
-          <option value="ADMIN">Admin</option>
-        </select>
-      </div>
-
-      <button type="submit">Update User</button>
-
-      <p v-if="successMessage" class="success-message">{{ successMessage }}</p>
     </form>
   </div>
 </template>
 
 <style scoped>
-/* You can reuse the styles from the Create view */
-.user-form {
-  max-width: 500px;
-  margin-top: 20px;
-  padding: 20px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
+.edit-user-container {
+  max-width: 700px;
+  margin: 0 auto;
 }
-.form-group {
-  margin-bottom: 15px;
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-8);
 }
-label {
-  display: block;
-  margin-bottom: 5px;
+
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  min-height: 40vh;
+  color: var(--text-secondary);
 }
-input,
-select {
-  width: 100%;
-  padding: 8px;
+
+/* All other styles are handled by global CSS */
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-5);
+}
+.card-footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.card-footer .btn {
+  align-self: flex-end;
 }
 input:disabled {
-  background-color: #f4f4f4;
+  background-color: var(--bg-secondary);
+  cursor: not-allowed;
 }
-.success-message {
-  color: green;
-  margin-top: 15px;
-}
-.error-message {
-  color: red;
-  margin-top: 15px;
+@media (max-width: 768px) {
+  .form-row {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

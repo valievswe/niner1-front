@@ -1,6 +1,7 @@
 <template>
   <div class="admin-layout">
     <AdminSidebar :is-collapsed="sidebarCollapsed" />
+
     <div
       :class="['admin-main-container', { 'is-collapsed': sidebarCollapsed }]"
     >
@@ -27,21 +28,27 @@ const toggleSidebar = () => {
 <style scoped>
 .admin-layout {
   display: flex;
-  background-color: var(--admin-bg-main);
+  min-height: 100vh;
+
+  background-color: var(--bg-secondary);
 }
+
 .admin-main-container {
   flex-grow: 1;
-  margin-left: 260px; /* Same as sidebar width */
-  transition: margin-left var(--admin-transition-medium);
-  min-height: 100vh;
   display: flex;
   flex-direction: column;
+
+  margin-left: var(--w-sidebar);
+  transition: margin-left var(--transition-base);
 }
+
 .admin-main-container.is-collapsed {
-  margin-left: 80px; /* Same as collapsed sidebar width */
+  margin-left: var(--w-sidebar-collapsed);
 }
+
 .admin-content {
-  padding: 2rem;
   flex-grow: 1;
+
+  padding: var(--space-8);
 }
 </style>

@@ -1,4 +1,3 @@
-<!-- src/components/ConfirmationModal.vue -->
 <script setup>
 // This component is controlled by props from its parent.
 const props = defineProps({
@@ -21,25 +20,49 @@ const emit = defineEmits(["confirm", "cancel"]);
 </script>
 
 <template>
-  <!-- Use a <Teleport> to render the modal at the end of the <body> -->
-  <!-- This prevents CSS issues with z-index and positioning. -->
   <Teleport to="body">
     <Transition name="modal-fade">
       <div v-if="show" class="modal-overlay" @click.self="emit('cancel')">
-        <div class="modal-content">
-          <h3 class="modal-title">{{ title }}</h3>
-          <p class="modal-message">{{ message }}</p>
-          <div class="modal-actions">
-            <button @click="emit('cancel')" class="btn-secondary">
+        <!-- The modal content is now structured like a card for consistency -->
+        <div
+          class="modal-content card"
+          role="dialog"
+          aria-modal="true"
+          :aria-labelledby="titleId"
+        >
+          <div class="card-body">
+            <h3 :id="titleId" class="modal-title">{{ title }}</h3>
+            <p class="modal-message">{{ message }}</p>
+          </div>
+          <div class="modal-actions card-footer">
+            <!-- 
+              IMPROVEMENT: 
+              Added the base 'btn' class alongside variants 'btn-secondary' and 'btn-danger'.
+              This is required by the design system to apply all base button styles correctly.
+            -->
+            <button @click="emit('cancel')" class="btn btn-secondary">
               Cancel
             </button>
-            <button @click="emit('confirm')" class="btn-danger">Confirm</button>
+            <button @click="emit('confirm')" class="btn btn-danger">
+              Confirm
+            </button>
           </div>
         </div>
       </div>
     </Transition>
   </Teleport>
 </template>
+
+<script>
+// A small addition to provide a unique ID for accessibility.
+export default {
+  data() {
+    return {
+      titleId: "modal-title-" + Math.random().toString(36).substring(7),
+    };
+  },
+};
+</script>
 
 <style scoped>
 .modal-overlay {
@@ -48,60 +71,60 @@ const emit = defineEmits(["confirm", "cancel"]);
   left: 0;
   width: 100%;
   height: 100%;
-  background-color: rgba(0, 0, 0, 0.6);
+  background-color: var(--bg-overlay); /* DS Variable */
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 9999;
+  z-index: var(--z-modal); /* DS Variable */
 }
 
 .modal-content {
-  background-color: white;
-  padding: 20px;
-  border-radius: 8px;
+  /* Aligns with the .card component from the design system */
   width: 90%;
-  max-width: 400px;
+  max-width: 450px;
   text-align: center;
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-lg); /* DS Variable */
+  /* Padding is now handled by .card-body and .card-footer */
 }
 
 .modal-title {
-  margin-top: 0;
+  /* Using typography scale from the design system */
+  font-size: var(--text-2xl);
+  color: var(--text-primary);
+  margin-bottom: var(--space-3); /* DS Spacing */
+}
+
+.modal-message {
+  color: var(--text-secondary); /* DS Variable */
+  line-height: var(--leading-relaxed); /* DS Variable */
 }
 
 .modal-actions {
-  margin-top: 20px;
   display: flex;
-  justify-content: center;
-  gap: 15px;
-}
-
-.modal-actions button {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-  font-size: 1em;
-}
-
-.btn-secondary {
-  background-color: #6c757d;
-  color: white;
-}
-
-.btn-danger {
-  background-color: #dc3545;
-  color: white;
+  justify-content: flex-end; /* A common pattern for confirm/cancel */
+  gap: var(--space-3); /* DS Spacing */
+  margin-top: var(--space-6); /* DS Spacing */
+  /* Inherits padding and background from .card-footer */
 }
 
 /* --- Transition Styles --- */
 .modal-fade-enter-active,
 .modal-fade-leave-active {
-  transition: opacity 0.3s ease;
+  transition: opacity var(--transition-base); /* DS Variable */
 }
 
 .modal-fade-enter-from,
 .modal-fade-leave-to {
   opacity: 0;
+}
+
+.modal-fade-enter-active .modal-content,
+.modal-fade-leave-active .modal-content {
+  transition: transform var(--transition-base);
+}
+
+.modal-fade-enter-from .modal-content,
+.modal-fade-leave-to .modal-content {
+  transform: translateY(-20px);
 }
 </style>

@@ -1,25 +1,23 @@
-<!-- src/components/question-forms/TrueFalseForm.vue -->
 <script setup>
 import { ref, onMounted } from "vue";
 
 const props = defineProps({
-  initialData: {
-    type: Object,
-    default: null,
-  },
+  initialData: { type: Object, default: null },
 });
-
-const instructions = ref("");
+const instructions = ref(
+  "Do the following statements agree with the information given in the passage?"
+);
 const passage = ref("");
 const statements = ref([{ id: "s_1", text: "", answer: "TRUE" }]);
-
 onMounted(() => {
   if (props.initialData) {
     const { content, answer } = props.initialData;
-    instructions.value = content.instructions || "";
+    instructions.value =
+      content.instructions ||
+      "Do the following statements agree with the information given in the passage?";
     passage.value = content.passage || "";
 
-    if (content.statements && answer) {
+    if (content.statements && content.statements.length && answer) {
       statements.value = content.statements.map((stmt) => ({
         id: stmt.id,
         text: stmt.text,
@@ -36,7 +34,6 @@ function addStatement() {
 
 function removeStatement(index) {
   statements.value.splice(index, 1);
-
   statements.value.forEach((stmt, i) => {
     stmt.id = `s_${i + 1}`;
   });
@@ -44,125 +41,133 @@ function removeStatement(index) {
 
 const getPayload = () => {
   const content = {
-    // passage: passage.value,
-    statements: statements.value.map((s) => ({ id: s.id, text: s.text })),
+    instructions: instructions.value,
+    passage: passage.value,
+    statements: statements.value
+      .filter((s) => s.text.trim())
+      .map((s) => ({ id: s.id, text: s.text })),
   };
 
-  const answer = statements.value.reduce((acc, curr) => {
-    acc[curr.id] = curr.answer;
-    return acc;
-  }, {});
+  const answer = statements.value
+    .filter((s) => s.text.trim())
+    .reduce((acc, curr) => {
+      acc[curr.id] = curr.answer;
+      return acc;
+    }, {});
 
   return { content, answer };
 };
 
-defineExpose({
-  getPayload,
-});
+defineExpose({ getPayload });
 </script>
-
 <template>
-  <div class="form-section">
-    <h4>Question Content</h4>
-    <!-- <div class="form-group">
-      <label
-        >Passage Text (content.passage) -
-        <em>Leave blank for Listening questions</em></label
-      >
-      <textarea
-        v-model="passage"
-        rows="7"
-        placeholder="Enter the reading passage here..."
-      ></textarea>
-    </div> -->
-
-    <div class="form-group">
-      <label>Statements (content.statements)</label>
-      <div
-        v-for="(statement, index) in statements"
-        :key="statement.id"
-        class="statement-row"
-      >
-        <strong class="statement-id">{{ statement.id }}:</strong>
-
-        <input
-          type="text"
-          v-model="statement.text"
-          placeholder="Enter the statement text..."
-        />
-
-        <select v-model="statement.answer">
-          <option>TRUE</option>
-          <option>FALSE</option>
-          <option>NOT_GIVEN</option>
-        </select>
-
-        <button
-          v-if="statements.length > 1"
-          type="button"
-          @click="removeStatement(index)"
-        >
-          -
-        </button>
+  <div class="form-container">
+    <div class="card">
+      <div class="card-header">
+        <h4 class="card-title">Question Content</h4>
       </div>
-      <button type="button" @click="addStatement">+ Add Statement</button>
+      <div class="card-body">
+        <div class="form-group">
+          <label class="form-label" for="tf-instructions">Instructions</label>
+          <input
+            id="tf-instructions"
+            type="text"
+            v-model="instructions"
+            class="form-input"
+          />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="tf-passage"
+            >Passage Text (Optional for Listening)</label
+          >
+          <textarea
+            id="tf-passage"
+            v-model="passage"
+            class="form-textarea"
+            rows="7"
+            placeholder="Enter the reading passage here..."
+          ></textarea>
+        </div>
+      </div>
     </div>
 
-    <div class="preview-section">
-      <h4>Answer Key Preview</h4>
-      <pre>{{
-        { ...statements.reduce((a, c) => ({ ...a, [c.id]: c.answer }), {}) }
-      }}</pre>
+    <div class="card">
+      <div class="card-header">
+        <h4 class="card-title">Statements & Answer Key</h4>
+      </div>
+      <div class="card-body">
+        <div class="statements-list">
+          <div
+            v-for="(statement, index) in statements"
+            :key="statement.id"
+            class="statement-row"
+          >
+            <strong class="statement-id">{{ statement.id }}:</strong>
+
+            <input
+              type="text"
+              v-model="statement.text"
+              class="form-input"
+              placeholder="Enter the statement text..."
+            />
+
+            <select v-model="statement.answer" class="form-select">
+              <option value="TRUE">TRUE</option>
+              <option value="FALSE">FALSE</option>
+              <option value="NOT_GIVEN">NOT GIVEN</option>
+            </select>
+
+            <!-- SEMANTIC BUTTON COLOR: Destructive action -->
+            <button
+              v-if="statements.length > 1"
+              type="button"
+              @click="removeStatement(index)"
+              class="btn btn-danger btn-sm"
+            >
+              &ndash;
+            </button>
+          </div>
+        </div>
+        <div class="add-button-container">
+          <!-- SEMANTIC BUTTON COLOR: Additive/neutral action -->
+          <button type="button" @click="addStatement" class="btn btn-secondary">
+            + Add Statement
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.form-section {
-  margin-top: 20px;
-  padding: 15px;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-}
-.form-group {
-  margin-bottom: 15px;
-}
-label {
-  display: block;
-  margin-bottom: 5px;
-  font-weight: bold;
-}
-textarea,
-input,
-select {
-  width: 100%;
-  padding: 8px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-}
-.statement-row {
+.form-container {
   display: flex;
-  gap: 10px;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.statements-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.statement-row {
+  display: grid;
+  grid-template-columns: 40px 1fr 150px auto;
+  gap: var(--space-4);
   align-items: center;
-  margin-bottom: 10px;
 }
+
 .statement-id {
-  font-family: monospace;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  text-align: right;
 }
-.statement-row input {
-  flex-grow: 1;
-}
-button {
-  padding: 5px 10px;
-}
-.preview-section {
-  margin-top: 20px;
-  background-color: #f7f7f7;
-  padding: 10px;
-  border-radius: 4px;
-}
-pre {
-  white-space: pre-wrap;
-  word-wrap: break-word;
+
+.add-button-container {
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border-primary);
 }
 </style>

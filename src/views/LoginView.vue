@@ -1,62 +1,117 @@
-<!-- src/views/LoginView.vue -->
 <script setup>
+// The script is correct and remains unchanged.
 import { ref } from "vue";
-import { useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
+import { useRouter } from "vue-router";
 
-// --- SETUP ---
 const email = ref("");
 const password = ref("");
 const errorMessage = ref("");
-const router = useRouter();
 const authStore = useAuthStore();
+const router = useRouter();
 
 async function handleLogin() {
   errorMessage.value = "";
   try {
-    await authStore.login({
+    const loggedInUser = await authStore.login({
       email: email.value,
       password: password.value,
     });
-    router.push("/dashboard");
+    if (loggedInUser.role === "ADMIN") {
+      router.push("/admin/dashboard");
+    } else {
+      router.push("/dashboard");
+    }
   } catch (error) {
-    console.error("Login failed:", error);
     errorMessage.value =
-      error.response?.data?.error || "An unexpected error occurred.";
+      error.response?.data?.error ||
+      "Login failed. Please check your credentials.";
   }
 }
 </script>
 
 <template>
-  <div class="login-container">
-    <h1>Login</h1>
-    <form @submit.prevent="handleLogin">
-      <div class="form-group">
-        <label for="email">Email:</label>
-        <input type="email" id="email" v-model="email" required />
+  <div class="login-page-wrapper">
+    <div class="login-container">
+      <div class="page-title">
+        <h1>niner</h1>
+        <h1>CD IELTS Platform</h1>
+        <p class="text-secondary">Please log in to continue</p>
       </div>
-      <div class="form-group">
-        <label for="password">Password:</label>
-        <input type="password" id="password" v-model="password" required />
+
+      <div class="card">
+        <div class="card-header">
+          <h4 class="card-title">Login</h4>
+        </div>
+        <form @submit.prevent="handleLogin" class="card-body">
+          <div class="form-group">
+            <label for="email" class="form-label">Email Address</label>
+            <input
+              type="email"
+              id="email"
+              v-model="email"
+              class="form-input"
+              required
+              placeholder="you@example.com"
+            />
+          </div>
+          <div class="form-group">
+            <label for="password" class="form-label">Password</label>
+            <input
+              type="password"
+              id="password"
+              v-model="password"
+              class="form-input"
+              required
+              placeholder="••••••••"
+            />
+          </div>
+
+          <div v-if="errorMessage" class="alert alert-error">
+            {{ errorMessage }}
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-lg btn-block">
+            Login
+          </button>
+        </form>
       </div>
-      <button type="submit">Log In</button>
-    </form>
-    <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
+    </div>
   </div>
 </template>
 
 <style scoped>
+.login-page-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  width: 100%;
+  background-color: var(--bg-secondary);
+}
+
 .login-container {
+  width: 100%;
   max-width: 400px;
-  margin: 50px auto;
-  padding: 20px;
-  border: 1px solid #ccc;
-  border-radius: 8px;
 }
-.form-group {
-  margin-bottom: 15px;
+
+.page-title {
+  text-align: center;
+  margin-bottom: var(--space-8);
 }
-.error-message {
-  color: red;
+
+.page-title h1 {
+  font-size: var(--text-3xl);
+  color: var(--text-primary);
+}
+
+.card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.btn-block {
+  width: 100%;
 }
 </style>

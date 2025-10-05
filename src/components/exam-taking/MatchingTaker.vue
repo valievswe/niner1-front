@@ -1,4 +1,3 @@
-<!-- src/components/exam-taking/MatchingTaker.vue -->
 <script setup>
 import { ref, watch } from "vue";
 
@@ -8,7 +7,6 @@ const props = defineProps({
 });
 const emit = defineEmits(["answer-updated"]);
 
-// The student's answers will be stored in an object { p_1: "o_a", p_2: "o_c", ... }
 const studentAnswers = ref({ ...props.initialAnswer });
 
 watch(
@@ -24,48 +22,62 @@ watch(
 </script>
 
 <template>
-  <div class="question-container">
-    <p class="instructions">{{ question.content.instructions }}</p>
-    <div class="matching-container">
-      <div class="prompts-list">
-        <h4>Prompts</h4>
+  <div class="question-container card">
+    <div class="card-body">
+      <p class="instructions">{{ question.content.instructions }}</p>
+
+      <div class="matching-container">
+        <div class="prompts-list content-box">
+          <h5>Prompts</h5>
+          <ul>
+            <li v-for="prompt in question.content.prompts" :key="prompt.id">
+              <strong>{{ prompt.id }}</strong
+              >: {{ prompt.text }}
+            </li>
+          </ul>
+        </div>
+
+        <div class="options-list content-box">
+          <h5>Options</h5>
+          <ul>
+            <li v-for="option in question.content.options" :key="option.id">
+              <strong>{{ option.id }}</strong
+              >: {{ option.text }}
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="answer-grid">
+        <h5>Your Answers</h5>
         <div
           v-for="prompt in question.content.prompts"
           :key="prompt.id"
-          class="prompt-item"
+          class="answer-row"
         >
-          <p>{{ prompt.id }}: {{ prompt.text }}</p>
-        </div>
-      </div>
-      <div class="options-list">
-        <h4>Options</h4>
-        <div
-          v-for="option in question.content.options"
-          :key="option.id"
-          class="option-item"
-        >
-          <p>{{ option.id }}: {{ option.text }}</p>
-        </div>
-      </div>
-    </div>
-    <div class="answer-grid">
-      <h4>Your Answers</h4>
-      <div
-        v-for="prompt in question.content.prompts"
-        :key="prompt.id"
-        class="answer-row"
-      >
-        <label :for="prompt.id">Answer for Prompt {{ prompt.id }}:</label>
-        <select :id="prompt.id" v-model="studentAnswers[prompt.id]">
-          <option :value="undefined">-- Select --</option>
-          <option
-            v-for="option in question.content.options"
-            :key="option.id"
-            :value="option.id"
+          <label :for="prompt.id" class="form-label">
+            Prompt {{ prompt.id }}
+          </label>
+          <select
+            :id="prompt.id"
+            v-model="studentAnswers[prompt.id]"
+            class="form-select"
           >
-            Option {{ option.id }}
-          </option>
-        </select>
+            <option :value="undefined">-- Select an option --</option>
+            <!-- 
+              IMPROVEMENT:
+              Displaying the full option text makes it easier for the user,
+              reducing the need to look back at the options list.
+            -->
+            <option
+              v-for="option in question.content.options"
+              :key="option.id"
+              :value="option.id"
+            >
+              {{ option.text }} ({{ option.id }})
+            </option>
+          </select>
+        </div>
       </div>
     </div>
   </div>
@@ -73,28 +85,68 @@ watch(
 
 <style scoped>
 .question-container {
-  margin-bottom: 30px;
+  margin-bottom: var(--space-6);
 }
+
 .instructions {
+  color: var(--text-secondary);
   font-style: italic;
-  color: #555;
+  margin-bottom: var(--space-5);
 }
+
 .matching-container {
+  display: grid;
+  grid-template-columns: 1fr; /* Single column on mobile */
+  gap: var(--space-5);
+  margin-bottom: var(--space-6);
+}
+
+/* Two columns for larger screens */
+@media (min-width: 768px) {
+  .matching-container {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.content-box {
+  background-color: var(--bg-secondary);
+  padding: var(--space-4);
+  border-radius: var(--radius-base);
+  border: 1px solid var(--border-primary);
+}
+
+h5 {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  margin-bottom: var(--space-3);
+  color: var(--text-primary);
+}
+
+.content-box ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
   display: flex;
-  gap: 30px;
-  margin: 15px 0;
+  flex-direction: column;
+  gap: var(--space-2);
 }
-.prompts-list,
-.options-list {
-  flex: 1;
+
+.content-box li {
+  color: var(--text-secondary);
+  line-height: var(--leading-relaxed);
 }
-.answer-grid {
-  margin-top: 20px;
-}
+
 .answer-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 120px 1fr; /* Fixed label width, flexible select */
   align-items: center;
-  gap: 10px;
-  margin-bottom: 5px;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.form-label {
+  margin: 0; /* Override default margin from form styles */
+  font-weight: var(--font-medium);
+  text-align: right;
 }
 </style>

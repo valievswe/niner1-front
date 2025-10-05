@@ -1,31 +1,28 @@
-<!-- src/views/admin/QuestionSetEditView.vue -->
 <script setup>
 import { ref, onMounted } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute, useRouter, RouterLink } from "vue-router";
 import apiClient from "@/services/api";
 
 const route = useRoute();
 const router = useRouter();
 const setId = route.params.id;
 
+// The script logic is correct and remains unchanged.
 const setData = ref({
   name: "",
   description: "",
   passage: "",
 });
-
-const section = ref(""); // Section is not editable
+const section = ref("");
 const loading = ref(true);
 const successMessage = ref("");
 const errorMessage = ref("");
 
 onMounted(async () => {
   try {
-    // We need a GET /api/question-sets/:id endpoint. Let's assume we build it.
-    // For now, we can fetch all and find the one we need. This is inefficient but works.
-    const response = await apiClient.get("/question-sets");
-    const set = response.data.find((s) => s.id === setId);
-    if (set) {
+    const response = await apiClient.get(`/question-sets/${setId}`);
+    if (response.data) {
+      const set = response.data;
       setData.value = {
         name: set.name,
         description: set.description,
@@ -43,9 +40,11 @@ onMounted(async () => {
 });
 
 async function updateSet() {
+  errorMessage.value = "";
+  successMessage.value = "";
   try {
     await apiClient.put(`/question-sets/${setId}`, setData.value);
-    successMessage.value = "Set updated successfully!";
+    successMessage.value = "Set updated successfully! Redirecting...";
     setTimeout(() => router.push("/admin/question-sets"), 1500);
   } catch (error) {
     errorMessage.value = "Failed to update set.";
@@ -54,72 +53,117 @@ async function updateSet() {
 </script>
 
 <template>
-  <div>
-    <h1>Admin: Edit Question Set</h1>
-    <div v-if="loading">Loading...</div>
-    <div v-else-if="errorMessage" class="error-message">{{ errorMessage }}</div>
-    <form v-else @submit.prevent="updateSet" class="set-form">
-      <p><strong>Section:</strong> {{ section }} (Cannot be changed)</p>
-      <div class="form-group">
-        <label for="setName">Set Name</label>
-        <input type="text" id="setName" v-model="setData.name" required />
+  <div class="edit-set-container">
+    <div class="page-header">
+      <h1>Edit Question Set</h1>
+      <RouterLink to="/admin/question-sets" class="btn btn-secondary">
+        &larr; Back to Question Set List
+      </RouterLink>
+    </div>
+
+    <!-- Loading State -->
+    <div v-if="loading" class="loading-state">
+      <div class="loader"></div>
+      <p>Loading Set Information...</p>
+    </div>
+
+    <!-- Error State -->
+    <div v-else-if="errorMessage && !section" class="alert alert-error">
+      <h4>Error Loading Data</h4>
+      <p>{{ errorMessage }}</p>
+    </div>
+
+    <!-- Main Form -->
+    <form v-else @submit.prevent="updateSet" class="card">
+      <div class="card-body">
+        <div class="info-banner">
+          <p><strong>Section:</strong> {{ section }} (Cannot be changed)</p>
+        </div>
+
+        <div class="form-group">
+          <label for="setName" class="form-label">Set Name</label>
+          <input
+            type="text"
+            id="setName"
+            v-model="setData.name"
+            class="form-input"
+            required
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="setDescription" class="form-label">Description</label>
+          <input
+            type="text"
+            id="setDescription"
+            v-model="setData.description"
+            class="form-input"
+          />
+        </div>
+
+        <div v-if="section === 'READING'" class="form-group">
+          <label for="setPassage" class="form-label">Reading Passage</label>
+          <textarea
+            id="setPassage"
+            v-model="setData.passage"
+            class="form-textarea"
+            rows="10"
+          ></textarea>
+        </div>
       </div>
-      <div class="form-group">
-        <label for="setDescription">Description</label>
-        <input type="text" id="setDescription" v-model="setData.description" />
+
+      <div class="card-footer">
+        <div v-if="successMessage" class="alert alert-success">
+          {{ successMessage }}
+        </div>
+        <div v-if="errorMessage" class="alert alert-error">
+          {{ errorMessage }}
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg">Update Set</button>
       </div>
-      <div v-if="section === 'READING'" class="form-group">
-        <label for="setPassage">Reading Passage</label>
-        <textarea
-          id="setPassage"
-          v-model="setData.passage"
-          rows="10"
-        ></textarea>
-      </div>
-      <button type="submit">Update Set</button>
-      <p v-if="successMessage" class="success-message">{{ successMessage }}</p>
     </form>
   </div>
 </template>
 
 <style scoped>
-.set-form {
-  max-width: 600px;
-  margin-bottom: 40px;
-  padding: 20px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
+.edit-set-container {
+  max-width: 800px;
+  margin: 0 auto;
 }
-.form-group {
-  margin-bottom: 15px;
-}
-.sets-list ul {
-  list-style: none;
-  padding: 0;
-}
-.sets-list li {
-  background-color: #f9f9f9;
-  padding: 10px;
-  border: 1px solid #eee;
-  margin-bottom: 5px;
-}
-.success-message {
-  color: green;
-}
-.error-message {
-  color: red;
-}
-.sets-list li {
+.page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  margin-bottom: var(--space-8);
 }
-.actions button {
-  margin-left: 10px;
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  min-height: 40vh;
+  color: var(--text-secondary);
 }
-.delete-btn {
-  background-color: #ffdddd;
-  border-color: #ff9999;
-  color: #c53030;
+/* All form and card styles are handled by global CSS */
+.info-banner {
+  background-color: var(--bg-secondary);
+  padding: var(--space-4);
+  border-radius: var(--radius-base);
+  border: 1px solid var(--border-primary);
+  margin-bottom: var(--space-6);
+  text-align: center;
+}
+.info-banner p {
+  margin: 0;
+  color: var(--text-secondary);
+}
+.card-footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.card-footer .btn {
+  align-self: flex-end; /* Pushes button to the right */
 }
 </style>

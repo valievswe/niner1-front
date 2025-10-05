@@ -1,50 +1,56 @@
-<!-- src/views/admin/QuestionEditView.vue -->
 <script setup>
 import { ref, onMounted, computed } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute, useRouter, RouterLink } from "vue-router";
 import apiClient from "@/services/api";
 
-// Import all your form components
+// --- COMPLETE COMPONENT IMPORTS ---
 import TrueFalseForm from "@/components/question-forms/TrueFalseForm.vue";
 import MultipleChoiceForm from "@/components/question-forms/MultipleChoiceForm.vue";
-// ... import others
+import GapFillForm from "@/components/question-forms/GapFillForm.vue";
+import MatchingForm from "@/components/question-forms/MatchingForm.vue";
+import MapLabelingForm from "@/components/question-forms/MapLabelingForm.vue";
+import WritingPromptForm from "@/components/question-forms/WritingPromptForm.vue";
 
 const route = useRoute();
 const router = useRouter();
 const questionId = route.params.id;
 
-// --- STATE ---
-const question = ref(null); // Will hold the full question object from the API
+const question = ref(null);
 const formComponentRef = ref(null);
 const loading = ref(true);
 const successMessage = ref("");
 const errorMessage = ref("");
 
-// Dynamic component mapping (same as in create view)
+// This mapping ensures the correct form component is loaded based on the question type.
 const formComponentMap = {
   TRUE_FALSE_NOT_GIVEN: TrueFalseForm,
   MULTIPLE_CHOICE_MULTIPLE_ANSWER: MultipleChoiceForm,
-  // ... other mappings
+  GAP_FILLING: GapFillForm,
+  SUMMARY_COMPLETION: GapFillForm,
+  MATCHING: MatchingForm,
+  MAP_LABELING: MapLabelingForm,
+  WRITING_PROMPT: WritingPromptForm,
 };
+
 const currentFormComponent = computed(() => {
   if (!question.value) return null;
   return formComponentMap[question.value.questionType];
 });
 
-// --- LIFECYCYCLE HOOK ---
-// Fetch the question data when the page loads
+// Fetches the question data when the page loads.
 onMounted(async () => {
   try {
     const response = await apiClient.get(`/questions/${questionId}`);
     question.value = response.data;
   } catch (error) {
-    errorMessage.value = "Failed to load question data.";
+    errorMessage.value =
+      "Failed to load question data. It may have been deleted.";
   } finally {
     loading.value = false;
   }
 });
 
-// --- METHODS ---
+// Handles the form submission to update the question.
 async function updateQuestion() {
   errorMessage.value = "";
   successMessage.value = "";
@@ -54,20 +60,13 @@ async function updateQuestion() {
   }
 
   try {
-    // Get the updated payload from the child form
+    // Retrieves the updated data from the child form component.
     const { content, answer } = formComponentRef.value.getPayload();
+    const payload = { content, answer }; // Only send fields that can be updated.
 
-    const payload = {
-      // We don't update section or type, only the content and answer
-      content,
-      answer,
-      // We could add a field for explanation here if needed
-    };
-
-    // Call the backend PUT endpoint
     await apiClient.put(`/questions/${questionId}`, payload);
 
-    successMessage.value = "Question updated successfully!";
+    successMessage.value = "Question updated successfully! Redirecting...";
     setTimeout(() => router.push("/admin/questions"), 1500);
   } catch (error) {
     errorMessage.value =
@@ -78,41 +77,120 @@ async function updateQuestion() {
 </script>
 
 <template>
-  <div>
-    <h1>Admin: Edit Question</h1>
+  <div class="edit-question-container">
+    <div class="page-header">
+      <h1>Edit Question</h1>
+      <RouterLink to="/admin/questions" class="btn btn-secondary">
+        &larr; Back to Question List
+      </RouterLink>
+    </div>
 
-    <div v-if="loading">Loading...</div>
-    <div v-else-if="errorMessage">{{ errorMessage }}</div>
+    <!-- Loading State -->
+    <div v-if="loading" class="loading-state">
+      <div class="loader"></div>
+      <p>Loading Question Editor...</p>
+    </div>
 
-    <div v-else-if="question">
-      <form @submit.prevent="updateQuestion">
-        <!-- Display non-editable info -->
-        <p><strong>Section:</strong> {{ question.section }}</p>
-        <p><strong>Type:</strong> {{ question.questionType }}</p>
+    <!-- Error State (if question failed to load) -->
+    <div v-else-if="errorMessage && !question" class="alert alert-error">
+      <h4>Error Loading Question</h4>
+      <p>{{ errorMessage }}</p>
+    </div>
 
-        <!-- The magic is here: Pass the fetched question data as a prop -->
+    <!-- Main Form Content -->
+    <form v-else-if="question" @submit.prevent="updateQuestion" class="card">
+      <div class="card-header">
+        <h4 class="card-title">Editing Question ID: {{ question.id }}</h4>
+      </div>
+      <div class="card-body">
+        <!-- Non-editable information is displayed in a visually distinct banner -->
+        <div class="info-banner">
+          <p><strong>Section:</strong> {{ question.section }}</p>
+          <p>
+            <strong>Type:</strong>
+            {{ question.questionType.replace(/_/g, " ") }}
+          </p>
+          <span>(Section and Type cannot be changed)</span>
+        </div>
+
+        <hr class="form-divider" />
+
+        <!-- The dynamic form component receives the initial data here -->
         <component
           :is="currentFormComponent"
           ref="formComponentRef"
           :key="question.id"
           :initial-data="question"
         />
+      </div>
 
-        <button type="submit">Update Question</button>
-        <p v-if="successMessage" class="success-message">
+      <div class="card-footer">
+        <div v-if="successMessage" class="alert alert-success">
           {{ successMessage }}
-        </p>
-        <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
-      </form>
-    </div>
+        </div>
+        <div v-if="errorMessage" class="alert alert-error">
+          {{ errorMessage }}
+        </div>
+
+        <!-- SEMANTIC BUTTON: The primary action of the page -->
+        <button type="submit" class="btn btn-primary btn-lg">
+          Update Question
+        </button>
+      </div>
+    </form>
   </div>
 </template>
 
 <style scoped>
-.success-message {
-  color: green;
+.edit-question-container {
+  max-width: 900px;
+  margin: 0 auto;
 }
-.error-message {
-  color: red;
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-8);
+}
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  min-height: 40vh;
+  color: var(--text-secondary);
+}
+.info-banner {
+  background-color: var(--bg-secondary);
+  padding: var(--space-4);
+  border-radius: var(--radius-base);
+  border: 1px solid var(--border-primary);
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  flex-wrap: wrap; /* Allows wrapping on smaller screens */
+  gap: var(--space-4);
+}
+.info-banner p {
+  color: var(--text-primary);
+  margin: 0;
+}
+.info-banner span {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+}
+.form-divider {
+  border: none;
+  border-top: 1px solid var(--border-primary);
+  margin: var(--space-6) 0;
+}
+.card-footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.card-footer .btn {
+  align-self: flex-end; /* Pushes button to the right */
 }
 </style>

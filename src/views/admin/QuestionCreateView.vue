@@ -3,7 +3,7 @@ import { ref, watch, computed } from "vue";
 import { useRouter, RouterLink } from "vue-router";
 import apiClient from "@/services/api";
 
-// Import all your form components
+// Script setup is correct and remains unchanged
 import TrueFalseForm from "@/components/question-forms/TrueFalseForm.vue";
 import MultipleChoiceForm from "@/components/question-forms/MultipleChoiceForm.vue";
 import GapFillForm from "@/components/question-forms/GapFillForm.vue";
@@ -13,11 +13,10 @@ import WritingPromptForm from "@/components/question-forms/WritingPromptForm.vue
 
 const router = useRouter();
 
-// --- STATE ---
 const section = ref("READING");
 const questionSets = ref([]);
 const selectedSetId = ref("");
-const partNumber = ref(1); // State for the new part number field
+const partNumber = ref(1);
 
 const questionType = ref("TRUE_FALSE_NOT_GIVEN");
 const explanation = ref("");
@@ -25,7 +24,6 @@ const formComponentRef = ref(null);
 const successMessage = ref("");
 const errorMessage = ref("");
 
-// --- DYNAMIC COMPONENT MAPPING ---
 const formComponentMap = {
   TRUE_FALSE_NOT_GIVEN: TrueFalseForm,
   MULTIPLE_CHOICE_MULTIPLE_ANSWER: MultipleChoiceForm,
@@ -39,13 +37,12 @@ const currentFormComponent = computed(
   () => formComponentMap[questionType.value]
 );
 
-// --- LOGIC TO FETCH QUESTION SETS ---
 watch(
   section,
   async (newSection) => {
     selectedSetId.value = "";
     questionSets.value = [];
-    partNumber.value = 1; // Reset part number when section changes
+    partNumber.value = 1;
     if (newSection) {
       try {
         const response = await apiClient.get(
@@ -61,7 +58,6 @@ watch(
   { immediate: true }
 );
 
-// --- METHOD TO SAVE THE QUESTION ---
 async function saveQuestion() {
   errorMessage.value = "";
   successMessage.value = "";
@@ -81,12 +77,12 @@ async function saveQuestion() {
       section: section.value,
       questionType: questionType.value,
       questionSetId: selectedSetId.value,
-      partNumber: partNumber.value, // Include the part number in the payload
+      partNumber: partNumber.value,
       content,
       answer,
       explanation: explanation.value,
     });
-    successMessage.value = "Question created successfully!";
+    successMessage.value = "Question created successfully! Redirecting...";
     setTimeout(() => router.push("/admin/questions"), 1500);
   } catch (error) {
     errorMessage.value =
@@ -97,143 +93,216 @@ async function saveQuestion() {
 </script>
 
 <template>
-  <div>
-    <h1>Admin: Create New Question</h1>
+  <div class="create-question-container">
+    <div class="page-header">
+      <h1>Create New Question</h1>
+      <p class="text-secondary">
+        Follow the steps below to configure and save a new question.
+      </p>
+    </div>
 
     <form @submit.prevent="saveQuestion" class="question-form">
-      <!-- STEP 1: SELECT SECTION -->
-      <div class="form-group">
-        <label for="section">1. Select Section</label>
-        <select id="section" v-model="section">
-          <option value="LISTENING">Listening</option>
-          <option value="READING">Reading</option>
-          <option value="WRITING">Writing</option>
-        </select>
+      <!-- STEP 1 & 2 CARD -->
+      <div class="card">
+        <div class="card-header">
+          <h4 class="card-title">1. Setup Details</h4>
+        </div>
+        <div class="card-body">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="section" class="form-label">Select Section</label>
+              <select id="section" v-model="section" class="form-select">
+                <option value="LISTENING">Listening</option>
+                <option value="READING">Reading</option>
+                <option value="WRITING">Writing</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="questionSet" class="form-label"
+                >Select Question Set</label
+              >
+              <select
+                id="questionSet"
+                v-model="selectedSetId"
+                class="form-select"
+                required
+              >
+                <option disabled value="">-- Please choose a set --</option>
+                <option
+                  v-for="set in questionSets"
+                  :key="set.id"
+                  :value="set.id"
+                >
+                  {{ set.name }}
+                </option>
+              </select>
+              <p
+                v-if="questionSets.length === 0 && section"
+                class="form-helper-text"
+              >
+                No sets found.
+                <RouterLink to="/admin/question-sets/new"
+                  >Create one first.</RouterLink
+                >
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <!-- STEP 2: SELECT QUESTION SET -->
-      <div class="form-group">
-        <label for="questionSet">2. Select Question Set</label>
-        <select id="questionSet" v-model="selectedSetId" required>
-          <option disabled value="">-- Please choose a set --</option>
-          <option v-for="set in questionSets" :key="set.id" :value="set.id">
-            {{ set.name }}
-          </option>
-        </select>
-        <p v-if="questionSets.length === 0 && section">
-          No sets found for this section.
-          <RouterLink to="/admin/question-sets">Create one first.</RouterLink>
-        </p>
-      </div>
-
-      <!-- STEP 3: FILL OUT QUESTION (only visible if a set is selected) -->
-      <div v-if="selectedSetId">
-        <hr />
-
-        <!-- THE NEW PART NUMBER DROPDOWN -->
-        <div class="form-group">
-          <label for="partNumber">3. Select Part / Passage / Task Number</label>
-
-          <select
-            v-if="section === 'LISTENING'"
-            id="partNumber"
-            v-model="partNumber"
-            required
-          >
-            <option :value="1">Part 1</option>
-            <option :value="2">Part 2</option>
-            <option :value="3">Part 3</option>
-            <option :value="4">Part 4</option>
-          </select>
-
-          <select
-            v-else-if="section === 'READING'"
-            id="partNumber"
-            v-model="partNumber"
-            required
-          >
-            <option :value="1">Passage 1</option>
-            <option :value="2">Passage 2</option>
-            <option :value="3">Passage 3</option>
-          </select>
-
-          <select
-            v-else-if="section === 'WRITING'"
-            id="partNumber"
-            v-model="partNumber"
-            required
-          >
-            <option :value="1">Task 1</option>
-            <option :value="2">Task 2</option>
-          </select>
+      <!-- STEP 3, 4 & CONTENT CARD -->
+      <div v-if="selectedSetId" class="card">
+        <div class="card-header">
+          <h4 class="card-title">2. Question Details</h4>
         </div>
+        <div class="card-body">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="partNumber" class="form-label"
+                >Part / Passage / Task</label
+              >
+              <select
+                v-if="section === 'LISTENING'"
+                id="partNumber"
+                v-model="partNumber"
+                class="form-select"
+                required
+              >
+                <option :value="1">Part 1</option>
+                <option :value="2">Part 2</option>
+                <option :value="3">Part 3</option>
+                <option :value="4">Part 4</option>
+              </select>
+              <select
+                v-else-if="section === 'READING'"
+                id="partNumber"
+                v-model="partNumber"
+                class="form-select"
+                required
+              >
+                <option :value="1">Passage 1</option>
+                <option :value="2">Passage 2</option>
+                <option :value="3">Passage 3</option>
+              </select>
+              <select
+                v-else-if="section === 'WRITING'"
+                id="partNumber"
+                v-model="partNumber"
+                class="form-select"
+                required
+              >
+                <option :value="1">Task 1</option>
+                <option :value="2">Task 2</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="questionType" class="form-label">Question Type</label>
+              <select
+                id="questionType"
+                v-model="questionType"
+                class="form-select"
+              >
+                <option value="TRUE_FALSE_NOT_GIVEN">
+                  True/False/Not Given
+                </option>
+                <option value="MULTIPLE_CHOICE_MULTIPLE_ANSWER">
+                  Multiple Choice
+                </option>
+                <option value="GAP_FILLING">Gap Filling</option>
+                <option value="SUMMARY_COMPLETION">Summary Completion</option>
+                <option value="MATCHING">Matching</option>
+                <option value="MAP_LABELING">Map Labeling</option>
+                <option value="WRITING_PROMPT">Writing Prompt</option>
+              </select>
+            </div>
+          </div>
 
-        <div class="form-group">
-          <label for="questionType">4. Select Question Type</label>
-          <select id="questionType" v-model="questionType">
-            <option value="TRUE_FALSE_NOT_GIVEN">True/False/Not Given</option>
-            <option value="MULTIPLE_CHOICE_MULTIPLE_ANSWER">
-              Multiple Choice (Multiple Answer)
-            </option>
-            <option value="GAP_FILLING">Gap Filling</option>
-            <option value="SUMMARY_COMPLETION">Summary Completion</option>
-            <option value="MATCHING">Matching</option>
-            <option value="MAP_LABELING">Map Labeling</option>
-            <option value="WRITING_PROMPT">Writing Prompt</option>
-          </select>
+          <hr class="form-divider" />
+
+          <!-- Dynamic form component is rendered here -->
+          <component
+            :is="currentFormComponent"
+            ref="formComponentRef"
+            :key="questionType"
+          />
         </div>
+        <div class="card-footer">
+          <div class="form-group">
+            <label for="explanation" class="form-label"
+              >Explanation (Optional)</label
+            >
+            <input
+              type="text"
+              id="explanation"
+              v-model="explanation"
+              class="form-input"
+              placeholder="Explain why the answer is correct..."
+            />
+          </div>
+          <!-- Success and Error alerts -->
+          <div v-if="successMessage" class="alert alert-success">
+            {{ successMessage }}
+          </div>
+          <div v-if="errorMessage" class="alert alert-error">
+            {{ errorMessage }}
+          </div>
 
-        <component
-          :is="currentFormComponent"
-          ref="formComponentRef"
-          :key="questionType"
-        />
-
-        <div class="form-group">
-          <label for="explanation">Explanation (Optional)</label>
-          <input type="text" id="explanation" v-model="explanation" />
+          <button type="submit" class="btn btn-primary btn-lg">
+            Save Question
+          </button>
         </div>
-
-        <button type="submit">Save Question</button>
-
-        <p v-if="successMessage" class="success-message">
-          {{ successMessage }}
-        </p>
-        <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
       </div>
     </form>
   </div>
 </template>
 
 <style scoped>
+.create-question-container {
+  max-width: 900px;
+  margin: 0 auto;
+}
+.page-header {
+  margin-bottom: var(--space-8);
+}
 .question-form {
-  max-width: 800px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
 }
-.form-group {
-  margin-bottom: 15px;
+
+/* Use a grid for side-by-side form groups on larger screens */
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-5);
 }
-label {
-  display: block;
-  margin-bottom: 5px;
-  font-weight: 500;
+@media (min-width: 768px) {
+  .form-row {
+    grid-template-columns: 1fr 1fr;
+  }
 }
-select,
-input,
-textarea {
-  width: 100%;
-  padding: 8px;
-  border-radius: 4px;
-  border: 1px solid #ccc;
+
+.form-helper-text {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin-top: var(--space-2);
 }
-.success-message {
-  color: green;
+.form-helper-text a {
+  font-weight: var(--font-semibold);
 }
-.error-message {
-  color: red;
-}
-hr {
-  margin: 20px 0;
+
+.form-divider {
   border: none;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--border-primary);
+  margin: var(--space-6) 0;
+}
+
+.card-footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.card-footer .btn {
+  align-self: flex-end; /* Aligns button to the right */
 }
 </style>

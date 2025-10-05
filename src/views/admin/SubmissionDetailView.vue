@@ -1,8 +1,9 @@
-<!-- src/views/admin/SubmissionDetailView.vue -->
 <script setup>
 import { ref, onMounted } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute, useRouter, RouterLink } from "vue-router";
 import apiClient from "@/services/api";
+import ConfirmationModal from "@/components/confirmation/ConfirmationModal.vue";
+// This component is assumed to provide a UI-friendly view of the QUESTION content.
 import QuestionResultDisplay from "../QuestionResultDisplay.vue";
 
 const route = useRoute();
@@ -12,27 +13,19 @@ const loading = ref(true);
 const errorMessage = ref("");
 const successMessage = ref("");
 
-// --- STATE for the marking form ---
-
+// --- State for marking and modals ---
 const manualScores = ref({});
+const isModalVisible = ref(false);
 
-// --- LIFECYCLE HOOK ---
-onMounted(async () => {
-  await fetchSubmission();
-});
-
-// --- METHODS ---
+// --- Data Fetching & Core Logic (Unchanged) ---
 async function fetchSubmission() {
   loading.value = true;
-  successMessage.value = "";
   errorMessage.value = "";
   try {
-    const submissionId = route.params.id;
     const response = await apiClient.get(
-      `/marking/submissions/${submissionId}`
+      `/marking/submissions/${route.params.id}`
     );
     submission.value = response.data;
-
     const initialScores = {};
     submission.value.studentAnswers.forEach((sa) => {
       if (sa.question.section === "WRITING") {
@@ -44,19 +37,18 @@ async function fetchSubmission() {
     });
     manualScores.value = initialScores;
   } catch (error) {
-    errorMessage.value =
-      error.response?.data?.error || "Failed to load submission data.";
+    errorMessage.value = "Failed to load submission data.";
   } finally {
     loading.value = false;
   }
 }
 
+onMounted(fetchSubmission);
+
 async function markSubmission() {
   successMessage.value = "";
   errorMessage.value = "";
   try {
-    const submissionId = route.params.id;
-
     const manualScoresPayload = Object.entries(manualScores.value).map(
       ([questionId, data]) => ({
         questionId,
@@ -64,212 +56,285 @@ async function markSubmission() {
         feedback: data.feedback,
       })
     );
-
-    await apiClient.post(`/marking/submissions/${submissionId}/mark`, {
+    await apiClient.post(`/marking/submissions/${route.params.id}/mark`, {
       manualScores: manualScoresPayload,
     });
-
-    successMessage.value =
-      "Marking finalized! Auto-marking is complete. Status is now MARKED.";
-    await fetchSubmission();
+    successMessage.value = "Marking has been finalized!";
+    await fetchSubmission(); // Refresh data to show new status
   } catch (error) {
-    errorMessage.value =
-      error.response?.data?.error || "Failed to finalize marks.";
+    errorMessage.value = "Failed to finalize marks.";
   }
 }
 
 async function releaseResults() {
+  isModalVisible.value = false;
   successMessage.value = "";
   errorMessage.value = "";
-  if (
-    !confirm("Are you sure you want to release these results to the student?")
-  ) {
-    return;
-  }
   try {
-    const submissionId = route.params.id;
-    await apiClient.post(`/marking/submissions/${submissionId}/release`);
-    successMessage.value = "Results have been released!";
-    await fetchSubmission();
+    await apiClient.post(`/marking/submissions/${route.params.id}/release`);
+    successMessage.value = "Results have been released to the student!";
+    await fetchSubmission(); // Refresh data
   } catch (error) {
-    errorMessage.value =
-      error.response?.data?.error || "Failed to release results.";
+    errorMessage.value = "Failed to release results.";
+  }
+}
+
+// --- Helper Functions ---
+function getStatusClass(status) {
+  switch (status) {
+    case "COMPLETED":
+      return "badge-warning";
+    case "MARKED":
+      return "badge-primary";
+    case "RESULTS_RELEASED":
+      return "badge-success";
+    default:
+      return "badge-primary";
   }
 }
 </script>
 
 <template>
-  <div>
-    <h1>Admin: Submission Details & Marking</h1>
+  <div class="submission-detail-container">
+    <div class="page-header">
+      <h1>Mark Submission</h1>
+      <RouterLink to="/admin/submissions" class="btn btn-secondary"
+        >&larr; Back to Submissions</RouterLink
+      >
+    </div>
 
-    <div v-if="loading">Loading submission...</div>
-    <div v-else-if="errorMessage" class="error-message">{{ errorMessage }}</div>
+    <div v-if="loading" class="loading-state">
+      <div class="loader"></div>
+      <p>Loading submission...</p>
+    </div>
+    <div v-else-if="errorMessage && !submission" class="alert alert-error">
+      {{ errorMessage }}
+    </div>
 
-    <div v-else-if="submission">
-      <div class="summary">
-        <p>
-          <strong>Student:</strong> {{ submission.student.firstName }}
-          {{ submission.student.lastName }} ({{ submission.student.email }})
-        </p>
-        <p><strong>Template:</strong> {{ submission.template.title }}</p>
-        <p>
-          <strong>Status:</strong>
-          <span :class="`status-${submission.status.toLowerCase()}`">{{
-            submission.status
-          }}</span>
-        </p>
-      </div>
-
-      <div class="actions-panel">
-        <button
-          v-if="submission.status === 'COMPLETED'"
-          @click="markSubmission"
-        >
-          Finalize Marks
-        </button>
-        <button
-          v-if="submission.status === 'MARKED'"
-          @click="releaseResults"
-          class="release-btn"
-        >
-          Release Results
-        </button>
-        <p v-if="successMessage" class="success-message">
-          {{ successMessage }}
-        </p>
-      </div>
-
-      <div class="answers-container">
-        <h3>Student's Answers</h3>
-        <div
-          v-for="item in submission.studentAnswers"
-          :key="item.id"
-          class="answer-item"
-        >
-          <h4>Question Type: {{ item.question.questionType }}</h4>
-          <strong>Question Content:</strong>
-          <QuestionResultDisplay :question="item.question" />
-          <strong>Student's Answer:</strong>
-          <pre class="student-answer">{{ item.answer }}</pre>
-          <strong>Correct Answer:</strong>
-          <pre class="correct-answer">{{ item.question.answer }}</pre>
-
-          <!-- The Interactive Marking Form for Writing Questions -->
+    <div v-else-if="submission" class="submission-layout">
+      <!-- Left Column: Main Content -->
+      <div class="answers-container card">
+        <div class="card-body">
           <div
-            v-if="
-              item.question.section === 'WRITING' &&
-              manualScores[item.question.id]
-            "
-            class="marking-form"
+            v-for="item in submission.studentAnswers"
+            :key="item.id"
+            class="answer-item"
           >
-            <h4>Marking</h4>
-            <div class="form-group">
-              <label :for="`score-${item.id}`">Score (0.0 - 9.0)</label>
-              <input
-                type="number"
-                step="0.5"
-                min="0"
-                max="9"
-                :id="`score-${item.id}`"
-                v-model="manualScores[item.question.id].score"
-              />
-            </div>
-            <div class="form-group">
-              <label :for="`feedback-${item.id}`">Feedback</label>
-              <textarea
-                :id="`feedback-${item.id}`"
-                rows="4"
-                v-model="manualScores[item.question.id].feedback"
-              ></textarea>
+            <h5 class="content-title">
+              {{ item.question.questionType.replace(/_/g, " ") }}
+            </h5>
+
+            <!-- Display the question itself -->
+            <QuestionResultDisplay
+              :question="item.question"
+              :student-answer="item.answer"
+            />
+
+            <!-- Display the interactive marking form for Writing questions -->
+            <div
+              v-if="
+                item.question.section === 'WRITING' &&
+                manualScores[item.question.id]
+              "
+              class="marking-form"
+            >
+              <h5 class="marking-title">Admin Marking & Feedback</h5>
+              <div class="form-row">
+                <div class="form-group">
+                  <label :for="`score-${item.id}`" class="form-label"
+                    >Score (0.0 - 9.0)</label
+                  >
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    max="9"
+                    :id="`score-${item.id}`"
+                    v-model="manualScores[item.question.id].score"
+                    class="form-input"
+                  />
+                </div>
+              </div>
+              <div class="form-group">
+                <label :for="`feedback-${item.id}`" class="form-label"
+                  >Feedback</label
+                >
+                <textarea
+                  :id="`feedback-${item.id}`"
+                  rows="4"
+                  v-model="manualScores[item.question.id].feedback"
+                  class="form-textarea"
+                ></textarea>
+              </div>
             </div>
           </div>
         </div>
       </div>
+
+      <!-- Right Column: Sticky Sidebar -->
+      <div class="sidebar">
+        <div class="card">
+          <div class="card-header">
+            <h4 class="card-title">Submission Summary</h4>
+          </div>
+          <div class="card-body">
+            <div class="summary-item">
+              <span class="label">Student</span>
+              <span class="value"
+                >{{ submission.student.firstName }}
+                {{ submission.student.lastName }}</span
+              >
+            </div>
+            <div class="summary-item">
+              <span class="label">Template</span>
+              <span class="value">{{ submission.template.title }}</span>
+            </div>
+            <div class="summary-item">
+              <span class="label">Status</span>
+              <span class="value">
+                <span class="badge" :class="getStatusClass(submission.status)">
+                  {{ submission.status.replace("_", " ") }}
+                </span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h4 class="card-title">Actions</h4></div>
+          <div class="card-body">
+            <div v-if="successMessage" class="alert alert-success">
+              {{ successMessage }}
+            </div>
+            <div v-if="errorMessage && submission" class="alert alert-error">
+              {{ errorMessage }}
+            </div>
+
+            <button
+              v-if="submission.status === 'COMPLETED'"
+              @click="markSubmission"
+              class="btn btn-primary btn-lg btn-block"
+            >
+              Finalize Marks
+            </button>
+            <button
+              v-if="submission.status === 'MARKED'"
+              @click="isModalVisible = true"
+              class="btn btn-success btn-lg btn-block"
+            >
+              Release Results
+            </button>
+            <p
+              v-if="submission.status === 'RESULTS_RELEASED'"
+              class="text-secondary text-center"
+            >
+              Results have been released to the student.
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
+
+    <ConfirmationModal
+      :show="isModalVisible"
+      title="Release Results"
+      message="Are you sure you want to release these results to the student? They will be able to see their score and feedback."
+      @confirm="releaseResults"
+      @cancel="isModalVisible = false"
+    />
   </div>
 </template>
 
 <style scoped>
-.summary {
-  background-color: #f4f4f4;
-  padding: 15px;
-  border-radius: 8px;
-  margin-bottom: 20px;
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-8);
 }
-.answers-container {
-  margin-top: 20px;
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  min-height: 60vh;
+  color: var(--text-secondary);
 }
+
+.submission-layout {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: var(--space-8);
+  align-items: flex-start;
+}
+.sidebar {
+  position: sticky;
+  top: var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+.summary-item {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: var(--space-4);
+}
+.summary-item .label {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-1);
+}
+.summary-item .value {
+  font-weight: var(--font-semibold);
+}
+.btn-block {
+  width: 100%;
+}
+.text-center {
+  text-align: center;
+}
+
 .answer-item {
-  margin-bottom: 20px;
-  border: 1px solid #ddd;
-  padding: 15px;
-  border-radius: 8px;
+  padding-bottom: var(--space-6);
+  margin-bottom: var(--space-6);
+  border-bottom: 1px solid var(--border-primary);
 }
-pre {
-  background-color: #eee;
-  padding: 10px;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  border-radius: 4px;
+.answer-item:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
 }
-.student-answer {
-  border-left: 3px solid #007bff;
-}
-.correct-answer {
-  border-left: 3px solid #28a745;
-}
-.status-completed {
-  font-weight: bold;
-  color: #dc3545;
-}
-.status-marked {
-  font-weight: bold;
-  color: #ffc107;
-}
-.status-results_released {
-  font-weight: bold;
-  color: #28a745;
-}
-.actions-panel {
-  margin: 20px 0;
-  padding: 15px;
-  border: 1px solid #ddd;
-  background-color: #f9f9f9;
-}
-.actions-panel button {
-  padding: 10px 15px;
-  font-size: 1em;
-  cursor: pointer;
-}
-.release-btn {
-  background-color: #28a745;
-  color: white;
-  border: none;
-}
-.success-message {
-  color: green;
-  margin-top: 10px;
-}
-.error-message {
-  color: red;
+.content-title {
+  font-size: var(--text-xl);
+  margin-bottom: var(--space-4);
 }
 .marking-form {
-  margin-top: 20px;
-  padding: 15px;
-  background-color: #fff3cd;
-  border: 1px solid #ffeeba;
-  border-radius: 8px;
+  margin-top: var(--space-5);
+  padding: var(--space-5);
+  background-color: var(--bg-secondary);
+  border-radius: var(--radius-base);
 }
-.marking-form .form-group {
-  margin-bottom: 10px;
+.marking-title {
+  font-size: var(--text-lg);
+  margin-bottom: var(--space-4);
 }
-.marking-form label {
-  display: block;
-  margin-bottom: 5px;
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-5);
 }
-.marking-form input,
-.marking-form textarea {
-  width: 100%;
-  padding: 8px;
+@media (min-width: 768px) {
+  .form-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 1024px) {
+  .submission-layout {
+    grid-template-columns: 1fr;
+  }
+  .sidebar {
+    position: static;
+  }
 }
 </style>

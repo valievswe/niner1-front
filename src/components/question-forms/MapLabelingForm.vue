@@ -1,24 +1,40 @@
-<!-- src/components/question-forms/MapLabelingForm.vue -->
 <script setup>
-import { ref } from "vue";
+import { ref, onMounted } from "vue";
 
+// Define the 'initialData' prop.
+const props = defineProps({
+  initialData: { type: Object, default: null },
+});
+
+// Default state for the form.
 const instructions = ref("Label the map below.");
 const imageUrl = ref("");
 const labels = ref([{ id: "label_1", text: "" }]);
-// The answers map the location number (e.g., '1' on the map) to a label ID (e.g., 'label_1')
-const answers = ref({ 1: "" });
+const answers = ref({ 1: "" }); // Maps location '1' to a label ID.
+
+// When the component mounts, populate the state with the prop data if it exists.
+onMounted(() => {
+  if (props.initialData) {
+    const { content, answer } = props.initialData;
+    instructions.value = content.instructions || "";
+    imageUrl.value = content.imageUrl || "";
+    labels.value =
+      content.labels && content.labels.length
+        ? content.labels
+        : [{ id: "label_1", text: "" }];
+    answers.value = answer && Object.keys(answer).length ? answer : { 1: "" };
+  }
+});
 
 function addLabel() {
   const newId = `label_${labels.value.length + 1}`;
   labels.value.push({ id: newId, text: "" });
-  // Also add a corresponding answer slot
   const newAnswerKey = `${Object.keys(answers.value).length + 1}`;
   answers.value[newAnswerKey] = "";
 }
 
 function removeLabel(index) {
   const removedLabel = labels.value.splice(index, 1)[0];
-  // Clean up any answers that might have been pointing to this label
   for (const key in answers.value) {
     if (answers.value[key] === removedLabel.id) {
       answers.value[key] = "";
@@ -40,91 +56,165 @@ defineExpose({ getPayload });
 </script>
 
 <template>
-  <div class="form-section">
-    <h4>Question Content</h4>
-    <div class="form-group">
-      <label>Instructions</label>
-      <input type="text" v-model="instructions" />
-    </div>
-    <div class="form-group">
-      <label>Image URL (for the map)</label>
-      <input
-        type="text"
-        v-model="imageUrl"
-        placeholder="https://path/to/your/map.png"
-      />
-      <img
-        v-if="imageUrl"
-        :src="imageUrl"
-        alt="Map Preview"
-        class="image-preview"
-      />
-    </div>
-    <div class="form-group">
-      <label>Labels (the words to be placed on the map)</label>
-      <div v-for="(label, index) in labels" :key="index" class="dynamic-row">
-        <span>{{ label.id }}:</span>
-        <input type="text" v-model="label.text" />
-        <button
-          v-if="labels.length > 1"
-          type="button"
-          @click="removeLabel(index)"
-        >
-          -
-        </button>
+  <div class="form-container">
+    <div class="card">
+      <div class="card-header">
+        <h4 class="card-title">Question Content</h4>
       </div>
-      <button type="button" @click="addLabel">+ Add Label</button>
+      <div class="card-body">
+        <div class="form-group">
+          <label class="form-label" for="map-instructions">Instructions</label>
+          <input
+            id="map-instructions"
+            type="text"
+            v-model="instructions"
+            class="form-input"
+          />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="map-imageUrl"
+            >Image URL (for the map)</label
+          >
+          <input
+            id="map-imageUrl"
+            type="text"
+            v-model="imageUrl"
+            class="form-input"
+            placeholder="https://path/to/your/map.png"
+          />
+          <div v-if="imageUrl" class="image-preview-container">
+            <img :src="imageUrl" alt="Map Preview" class="image-preview" />
+          </div>
+        </div>
+      </div>
     </div>
-    <h4>Answer Key</h4>
-    <div class="form-group">
-      <div v-for="(value, key) in answers" :key="key" class="answer-row">
-        <label>Location {{ key }} on map corresponds to:</label>
-        <select v-model="answers[key]">
-          <option :value="undefined">-- Select Label --</option>
-          <option v-for="label in labels" :key="label.id" :value="label.id">
-            {{ label.text || label.id }}
-          </option>
-        </select>
+
+    <div class="card">
+      <div class="card-header">
+        <h4 class="card-title">Labels & Answer Key</h4>
+      </div>
+      <div class="card-body">
+        <div class="form-group">
+          <label class="form-label">Define Labels (words to be placed)</label>
+          <div class="dynamic-list">
+            <div
+              v-for="(label, index) in labels"
+              :key="index"
+              class="dynamic-row"
+            >
+              <span class="row-id">{{ label.id }}:</span>
+              <input
+                type="text"
+                v-model="label.text"
+                class="form-input"
+                placeholder="Enter label text"
+              />
+              <button
+                v-if="labels.length > 1"
+                type="button"
+                @click="removeLabel(index)"
+                class="btn btn-danger btn-sm"
+              >
+                &ndash;
+              </button>
+            </div>
+          </div>
+          <div class="add-button-container">
+            <button type="button" @click="addLabel" class="btn btn-secondary">
+              + Add Label
+            </button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Map Answers (Location → Label)</label>
+          <div class="dynamic-list">
+            <div v-for="(value, key) in answers" :key="key" class="answer-row">
+              <label :for="`answer-${key}`" class="form-label"
+                >Location {{ key }}</label
+              >
+              <select
+                :id="`answer-${key}`"
+                v-model="answers[key]"
+                class="form-select"
+              >
+                <option :value="undefined">-- Select Label --</option>
+                <option
+                  v-for="label in labels.filter((l) => l.text)"
+                  :key="label.id"
+                  :value="label.id"
+                >
+                  {{ label.text }} ({{ label.id }})
+                </option>
+              </select>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* ... shared styles ... */
-.image-preview {
-  max-width: 100%;
-  margin-top: 10px;
-  border: 1px solid #ccc;
-}
-.form-section {
-  margin-top: 20px;
-  padding: 15px;
-  border: 1px solid #e0e0e0;
-}
-.form-group {
-  margin-bottom: 15px;
-}
-label {
-  display: block;
-  margin-bottom: 5px;
-  font-weight: bold;
-}
-input,
-select {
-  width: 100%;
-  padding: 8px;
-  margin-bottom: 5px;
-}
-.dynamic-row {
+.form-container {
   display: flex;
-  gap: 10px;
-  margin-bottom: 5px;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.image-preview-container {
+  margin-top: var(--space-4);
+  background-color: var(--bg-secondary);
+  padding: var(--space-4);
+  border-radius: var(--radius-base);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.image-preview {
+  max-width: 400px;
+  max-height: 300px;
+  width: auto;
+  height: auto;
+  border: 1px solid var(--border-primary);
+}
+
+.dynamic-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.dynamic-row,
+.answer-row {
+  display: grid;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.dynamic-row {
+  grid-template-columns: 100px 1fr auto; /* ID | Input | Button */
 }
 .answer-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 5px;
+  grid-template-columns: 100px 1fr; /* Label | Select */
+}
+
+.row-id {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  text-align: right;
+}
+.answer-row .form-label {
+  margin: 0;
+  text-align: right;
+  font-weight: var(--font-medium);
+}
+
+.add-button-container {
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border-primary);
 }
 </style>
