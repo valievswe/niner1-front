@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref, onMounted, computed } from "vue";
 import { useRoute } from "vue-router";
 import apiClient from "@/services/api";
 import QuestionResultDisplay from "./QuestionResultDisplay.vue";
@@ -24,13 +24,33 @@ onMounted(async () => {
   }
 });
 
-function formatBandScore(score) {
-  return score ? score.toFixed(1) : "N/A";
-}
+// Group answers by section for display
+const listeningAnswers = computed(
+  () =>
+    results.value?.studentAnswers.filter(
+      (sa) => sa.question.section === "LISTENING"
+    ) || []
+);
+const readingAnswers = computed(
+  () =>
+    results.value?.studentAnswers.filter(
+      (sa) => sa.question.section === "READING"
+    ) || []
+);
+const writingAnswers = computed(
+  () =>
+    results.value?.studentAnswers.filter(
+      (sa) => sa.question.section === "WRITING"
+    ) || []
+);
+
+// Format band scores
+const formatBand = (score) => (score ? score.toFixed(1) : "N/A");
 </script>
 
 <template>
   <div class="results-container">
+    <!-- Loading & Error States -->
     <div v-if="loading" class="loading-state">
       <div class="loader"></div>
       <p>Loading your exam results...</p>
@@ -41,8 +61,9 @@ function formatBandScore(score) {
     </div>
 
     <div v-else-if="results && results.scores" class="results-content">
+      <!-- Header -->
       <div class="page-header">
-        <h1 class="page-title">Exam Results</h1>
+        <h1 class="page-title">Your IELTS Results</h1>
         <p class="page-subtitle">{{ results.template.title }}</p>
         <p class="text-secondary">
           Completed on:
@@ -50,39 +71,41 @@ function formatBandScore(score) {
         </p>
       </div>
 
-      <!-- SCORE SUMMARY -->
+      <!-- Score Summary -->
       <div class="score-summary-panel card">
-        <h2 class="section-title">Your Scores</h2>
+        <h2 class="section-title">Band Scores</h2>
         <div class="scores-grid">
           <div class="score-card">
             <h3 class="score-label">Listening</h3>
             <div class="band-score">
-              {{ formatBandScore(results.scores.bandScores.listening) }}
+              {{ formatBand(results.scores.bandScores.listening) }}
             </div>
             <div class="raw-score">
-              {{ results.scores.rawScores.LISTENING }} correct
+              {{ results.scores.rawScores.LISTENING }} /
+              {{ results.scores.totals?.LISTENING || 40 }}
             </div>
           </div>
           <div class="score-card">
             <h3 class="score-label">Reading</h3>
             <div class="band-score">
-              {{ formatBandScore(results.scores.bandScores.reading) }}
+              {{ formatBand(results.scores.bandScores.reading) }}
             </div>
             <div class="raw-score">
-              {{ results.scores.rawScores.READING }} correct
+              {{ results.scores.rawScores.READING }} /
+              {{ results.scores.totals?.READING || 40 }}
             </div>
           </div>
           <div class="score-card">
             <h3 class="score-label">Writing</h3>
             <div class="band-score">
-              {{ formatBandScore(results.scores.bandScores.writing) }}
+              {{ formatBand(results.scores.bandScores.writing) }}
             </div>
             <div class="raw-score">Examiner assessed</div>
           </div>
           <div class="score-card score-card--overall">
             <h3 class="score-label">Overall Band</h3>
             <div class="band-score">
-              {{ formatBandScore(results.scores.overallBandScore) }}
+              {{ formatBand(results.scores.overallBandScore) }}
             </div>
           </div>
         </div>
@@ -90,68 +113,63 @@ function formatBandScore(score) {
 
       <hr class="divider" />
 
-      <!-- DETAILED BREAKDOWN -->
-      <h2 class="section-title">Detailed Breakdown</h2>
-      <div
-        v-for="studentAnswer in results.studentAnswers"
-        :key="studentAnswer.id"
-        class="result-item card"
-      >
-        <div class="question-content">
-          <h3 class="question-type">
-            {{ studentAnswer.question.questionType.replace(/_/g, " ") }}
-          </h3>
-          <QuestionResultDisplay :question="studentAnswer.question" />
+      <!-- Listening Section -->
+      <div v-if="listeningAnswers.length" class="section-results">
+        <h2 class="section-title">
+          Listening (Questions 1–{{ listeningAnswers.length }})
+        </h2>
+        <div
+          v-for="sa in listeningAnswers"
+          :key="sa.id"
+          class="result-item card"
+        >
+          <QuestionResultDisplay
+            :question="sa.question"
+            :studentAnswer="sa.answer"
+          />
+          <div v-if="sa.feedback" class="examiner-note">
+            <strong>Feedback:</strong> {{ sa.feedback }}
+            <span v-if="sa.score" class="score-tag">Score: {{ sa.score }}</span>
+          </div>
         </div>
+      </div>
 
-        <div class="answer-comparison">
-          <div class="answer-box your-answer">
-            <h4 class="answer-heading">Your Answer</h4>
-            <div
-              v-if="
-                ['GAP_FILLING', 'SUMMARY_COMPLETION'].includes(
-                  studentAnswer.question.questionType
-                )
-              "
-            >
-              <pre class="answer-pre">{{ studentAnswer.answer }}</pre>
-            </div>
-            <div
-              v-else-if="
-                studentAnswer.question.questionType === 'WRITING_PROMPT'
-              "
-            >
-              <p class="writing-response">{{ studentAnswer.answer.text }}</p>
-            </div>
-            <pre v-else class="answer-pre">{{ studentAnswer.answer }}</pre>
+      <!-- Reading Section -->
+      <div v-if="readingAnswers.length" class="section-results">
+        <h2 class="section-title">
+          Reading (Questions 1–{{ readingAnswers.length }})
+        </h2>
+        <div v-for="sa in readingAnswers" :key="sa.id" class="result-item card">
+          <QuestionResultDisplay
+            :question="sa.question"
+            :studentAnswer="sa.answer"
+          />
+          <div v-if="sa.feedback" class="examiner-note">
+            <strong>Feedback:</strong> {{ sa.feedback }}
+            <span v-if="sa.score" class="score-tag">Score: {{ sa.score }}</span>
+          </div>
+        </div>
+      </div>
 
-            <span v-if="studentAnswer.isCorrect" class="badge badge-success"
-              >✔ Correct</span
-            >
-            <span
-              v-else-if="studentAnswer.isCorrect === false"
-              class="badge badge-error"
-              >✖ Incorrect</span
+      <!-- Writing Section -->
+      <div v-if="writingAnswers.length" class="section-results">
+        <h2 class="section-title">Writing</h2>
+        <div
+          v-for="(sa, index) in writingAnswers"
+          :key="sa.id"
+          class="result-item card"
+        >
+          <div class="writing-task-header">
+            <h3>Task {{ index + 1 }}</h3>
+            <span v-if="sa.score" class="score-badge"
+              >Band {{ formatBand(sa.score) }}</span
             >
           </div>
-
-          <div
-            v-if="studentAnswer.isCorrect === false"
-            class="answer-box correct-answer"
-          >
-            <h4 class="answer-heading">Correct Answer</h4>
-            <pre class="answer-pre">{{ studentAnswer.question.answer }}</pre>
+          <div class="writing-response-box">
+            <p class="writing-response">{{ sa.answer }}</p>
           </div>
-
-          <div
-            v-if="studentAnswer.feedback"
-            class="answer-box examiner-feedback"
-          >
-            <h4 class="answer-heading">Examiner Feedback</h4>
-            <p>{{ studentAnswer.feedback }}</p>
-            <div v-if="studentAnswer.score" class="feedback-score">
-              <strong>Score:</strong> {{ studentAnswer.score }}
-            </div>
+          <div v-if="sa.feedback" class="examiner-note">
+            <strong>Examiner Feedback:</strong> {{ sa.feedback }}
           </div>
         </div>
       </div>
@@ -166,7 +184,6 @@ function formatBandScore(score) {
   padding: var(--space-6) var(--space-4);
 }
 
-/* Loading State */
 .loading-state {
   display: flex;
   flex-direction: column;
@@ -176,21 +193,7 @@ function formatBandScore(score) {
   gap: var(--space-4);
   color: var(--text-secondary);
 }
-.loader {
-  border: 3px solid var(--color-gray-200);
-  border-top: 3px solid var(--color-primary-600);
-  border-radius: 50%;
-  width: 48px;
-  height: 48px;
-  animation: spin 1s linear infinite;
-}
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 
-/* Page Header */
 .page-header {
   text-align: center;
   margin-bottom: var(--space-8);
@@ -256,82 +259,57 @@ function formatBandScore(score) {
   margin: var(--space-8) 0;
 }
 
-/* Result Item */
+/* Section Results */
+.section-results {
+  margin-bottom: var(--space-8);
+}
 .result-item {
   margin-bottom: var(--space-6);
-}
-.question-type {
-  font-size: var(--text-lg);
-  font-weight: var(--font-semibold);
-  color: var(--text-primary);
-  margin: 0 0 var(--space-4) 0;
+  padding: var(--space-5);
 }
 
-/* Answer Comparison */
-.answer-comparison {
+/* Writing Specific */
+.writing-task-header {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  margin-top: var(--space-5);
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-4);
 }
-@media (min-width: 768px) {
-  .answer-comparison {
-    flex-direction: row;
-    flex-wrap: wrap;
-  }
-  .examiner-feedback {
-    flex: 1 1 100%;
-  }
-}
-
-.answer-box {
-  flex: 1;
+.writing-response-box {
+  background: var(--bg-secondary);
   padding: var(--space-4);
   border-radius: var(--radius-base);
-  border: var(--border-width) solid var(--border-primary);
-}
-.your-answer {
-  background: var(--color-gray-50);
-  border-color: var(--color-primary-200);
-}
-.correct-answer {
-  background: var(--color-success-50);
-  border-color: var(--color-success-300);
-}
-.examiner-feedback {
-  background: var(--color-warning-50);
-  border-color: var(--color-warning-300);
-}
-
-.answer-heading {
-  font-size: var(--text-sm);
-  font-weight: var(--font-semibold);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-wide);
-  color: var(--text-secondary);
-  margin: 0 0 var(--space-2) 0;
-}
-
-.answer-pre {
-  background: white;
-  padding: var(--space-3);
-  border-radius: var(--radius-sm);
-  white-space: pre-wrap;
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  margin: var(--space-2) 0;
   border: 1px solid var(--border-primary);
 }
-
 .writing-response {
   white-space: pre-wrap;
   line-height: var(--leading-relaxed);
+  margin: 0;
+}
+.score-badge {
+  background: var(--color-primary-100);
+  color: var(--color-primary-800);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
 }
 
-.feedback-score {
-  margin-top: var(--space-2);
-  font-weight: var(--font-medium);
+/* Examiner Feedback */
+.examiner-note {
+  margin-top: var(--space-4);
+  padding: var(--space-3);
+  background: var(--color-warning-50);
+  border-left: 3px solid var(--color-warning-500);
+  border-radius: var(--radius-base);
+  font-size: var(--text-sm);
   color: var(--text-primary);
+}
+.score-tag {
+  display: block;
+  margin-top: var(--space-2);
+  font-weight: var(--font-semibold);
+  color: var(--color-primary-700);
 }
 
 /* Responsive */
@@ -341,6 +319,11 @@ function formatBandScore(score) {
   }
   .band-score {
     font-size: var(--text-3xl);
+  }
+  .writing-task-header {
+    flex-direction: column;
+    gap: var(--space-2);
+    align-items: flex-start;
   }
 }
 </style>

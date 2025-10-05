@@ -5,9 +5,9 @@ const props = defineProps({
   initialData: { type: Object, default: null },
 });
 
-const instructions = ref("Complete the notes below...");
+const instructions = ref("Complete the text with the correct words.");
 const textWithGaps = ref(
-  "Example Text:\nThe student is in their {{1}} year.\nContact number: {{2}}"
+  "Example text with gaps: The student is in their {{1}} year and has a contact number {{2}}."
 );
 const answers = ref([{ id: "1", text: "" }]);
 
@@ -20,17 +20,22 @@ onMounted(() => {
     const answerKeys = Object.keys(answer);
     if (answerKeys.length > 0) {
       answers.value = answerKeys.map((key) => ({ id: key, text: answer[key] }));
+    } else {
+      answers.value = [{ id: "1", text: "" }];
     }
   }
 });
 
 function addAnswerField() {
-  const newId = `${answers.value.length + 1}`;
+  const newId = `${
+    parseInt(answers.value[answers.value.length - 1]?.id || 0) + 1
+  }`;
   answers.value.push({ id: newId, text: "" });
 }
 
 function removeAnswerField(index) {
   answers.value.splice(index, 1);
+  // Re-index remaining answers
   answers.value.forEach((ans, i) => {
     ans.id = `${i + 1}`;
   });
@@ -52,6 +57,7 @@ const getPayload = () => {
 
 defineExpose({ getPayload });
 </script>
+
 <template>
   <div class="form-container">
     <div class="card">
@@ -60,24 +66,31 @@ defineExpose({ getPayload });
       </div>
       <div class="card-body">
         <div class="form-group">
-          <label class="form-label" for="instructions">Instructions</label>
+          <label class="form-label" for="gapfill-instructions"
+            >Instructions</label
+          >
           <input
-            id="instructions"
+            id="gapfill-instructions"
             type="text"
             v-model="instructions"
             class="form-input"
           />
         </div>
         <div class="form-group">
-          <label class="form-label" for="textWithGaps"
-            >Text with Gaps (Use {'{{ number }}'} for gaps)</label
-          >
+          <label class="form-label" for="textWithGaps">
+            Text with Gaps (Use &#123;&#123;number&#125;&#125; for gaps)
+          </label>
           <textarea
             id="textWithGaps"
             v-model="textWithGaps"
             class="form-textarea"
             rows="7"
+            placeholder="Enter text with gaps like: The student is in their {{1}} year and has a contact number {{2}}."
           ></textarea>
+          <p class="form-helper-text">
+            Use double curly braces with numbers to create gaps:
+            &#123;&#123;1&#125;&#125;, &#123;&#123;2&#125;&#125;, etc.
+          </p>
         </div>
       </div>
     </div>
@@ -88,7 +101,7 @@ defineExpose({ getPayload });
       </div>
       <div class="card-body">
         <div class="answers-list">
-          <div v-for="(ans, index) in answers" :key="index" class="answer-row">
+          <div v-for="(ans, index) in answers" :key="ans.id" class="answer-row">
             <label :for="`answer-${ans.id}`" class="form-label"
               >Gap {{ ans.id }}</label
             >
@@ -97,7 +110,7 @@ defineExpose({ getPayload });
               type="text"
               v-model="ans.text"
               class="form-input"
-              placeholder="Correct answer"
+              placeholder="Correct answer for gap"
             />
             <button
               v-if="answers.length > 1"
@@ -128,24 +141,24 @@ defineExpose({ getPayload });
 .form-container {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6); /* Consistent spacing between cards */
+  gap: var(--space-6);
 }
 
 .answers-list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4); /* Space between each answer row */
+  gap: var(--space-4);
 }
 
 .answer-row {
   display: grid;
-  grid-template-columns: 100px 1fr auto; /* Label | Input | Button */
+  grid-template-columns: 100px 1fr auto;
   align-items: center;
   gap: var(--space-4);
 }
 
 .answer-row .form-label {
-  margin: 0; /* Override default form-label margin */
+  margin: 0;
   text-align: right;
   font-weight: var(--font-medium);
 }
@@ -154,5 +167,11 @@ defineExpose({ getPayload });
   margin-top: var(--space-5);
   padding-top: var(--space-5);
   border-top: 1px solid var(--border-primary);
+}
+
+.form-helper-text {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin-top: var(--space-2);
 }
 </style>

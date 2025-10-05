@@ -56,7 +56,7 @@ async function handleDeleteConfirmed() {
   if (!questionToDelete.value) return;
   try {
     await apiClient.delete(`/questions/${questionToDelete.value.id}`);
-    // After deleting, refetch the current page to get the updated list
+
     fetchQuestions(currentPage.value);
   } catch (error) {
     alert(error.response?.data?.error || "Failed to delete the question.");

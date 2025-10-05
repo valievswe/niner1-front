@@ -229,11 +229,27 @@ async function submitExam() {
   window.removeEventListener("beforeunload", beforeUnloadHandler);
 
   const scheduledExamId = route.params.id;
+
+  // Normalize answers to match backend expectations
   const answersPayload = Object.entries(studentAnswers.value).map(
-    ([questionId, answer]) => ({
-      questionId,
-      answer,
-    })
+    ([questionId, answerObj]) => {
+      let finalAnswer = answerObj;
+
+      // Handle Multiple Choice: extract array from { correctOptionIds: [...] }
+      if (answerObj && answerObj.correctOptionIds !== undefined) {
+        finalAnswer = answerObj.correctOptionIds;
+      }
+      // Handle Writing: send plain text instead of { text: "..." }
+      else if (answerObj && answerObj.text !== undefined) {
+        finalAnswer = answerObj.text;
+      }
+      // Gap Filling, True/False, Matching: already in correct object format
+
+      return {
+        questionId,
+        answer: finalAnswer,
+      };
+    }
   );
 
   try {
@@ -683,7 +699,7 @@ function stopDrag() {
 .exam-header {
   background: #1a202c;
   color: white;
-  padding: 20px 32px;
+  padding: 10px 32px;
   border-bottom: 1px solid #2d3748;
 }
 
@@ -772,7 +788,7 @@ function stopDrag() {
   padding: 24px;
   gap: 0;
   max-width: 1800px;
-  margin: 0 auto;
+  margin-bottom: 10rem;
   width: 100%;
 }
 

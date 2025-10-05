@@ -5,55 +5,96 @@ const props = defineProps({
   initialData: { type: Object, default: null },
 });
 
-const instructions = ref("Choose the correct letter, A, B, or C.");
-const passage = ref("");
-const prompt = ref("Which characteristic is mentioned about the subject?");
-const options = ref([{ id: "o_a", text: "" }]);
-const correctOptionIds = ref([]);
+const instructions = ref("Match the statements to the correct options.");
+const prompts = ref([{ id: "p_1", text: "" }]);
+const options = ref([{ id: "o_1", text: "" }]);
+const answers = ref({}); // Maps prompt id to option id
 
 onMounted(() => {
   if (props.initialData) {
     const { content, answer } = props.initialData;
-
     instructions.value = content.instructions || "";
-    passage.value = content.passage || "";
-    prompt.value = content.prompt || "";
-    options.value =
-      content.options && content.options.length
-        ? content.options
-        : [{ id: "o_a", text: "" }];
-    correctOptionIds.value = answer.correctOptionIds || [];
+
+    // Handle prompts
+    if (content.prompts && content.prompts.length) {
+      prompts.value = content.prompts;
+    } else {
+      prompts.value = [{ id: "p_1", text: "" }];
+    }
+
+    // Handle options
+    if (content.options && content.options.length) {
+      options.value = content.options;
+    } else {
+      options.value = [{ id: "o_1", text: "" }];
+    }
+
+    // Handle answers
+    answers.value = answer && Object.keys(answer).length ? answer : {};
   }
 });
 
+function addPrompt() {
+  const newId = `p_${prompts.value.length + 1}`;
+  prompts.value.push({ id: newId, text: "" });
+}
+
+function removePrompt(index) {
+  const removedPrompt = prompts.value.splice(index, 1)[0];
+  delete answers.value[removedPrompt.id];
+  // Re-index remaining prompts if needed
+  prompts.value.forEach((prompt, i) => {
+    const oldId = prompt.id;
+    const newId = `p_${i + 1}`;
+    if (oldId !== newId) {
+      prompt.id = newId;
+      if (answers.value[oldId]) {
+        answers.value[newId] = answers.value[oldId];
+        delete answers.value[oldId];
+      }
+    }
+  });
+}
+
 function addOption() {
-  const newLetter = String.fromCharCode(97 + options.value.length);
-  const newId = `o_${newLetter}`;
+  const newId = `o_${options.value.length + 1}`;
   options.value.push({ id: newId, text: "" });
 }
+
 function removeOption(index) {
   const removedOption = options.value.splice(index, 1)[0];
-  const correctIndex = correctOptionIds.value.indexOf(removedOption.id);
-  if (correctIndex > -1) {
-    correctOptionIds.value.splice(correctIndex, 1);
+  // Remove any answers that referenced this option
+  for (const promptId in answers.value) {
+    if (answers.value[promptId] === removedOption.id) {
+      delete answers.value[promptId];
+    }
   }
-  options.value.forEach((o, i) => {
-    o.id = `o_${String.fromCharCode(97 + i)}`;
+  // Re-index remaining options if needed
+  options.value.forEach((option, i) => {
+    const oldId = option.id;
+    const newId = `o_${i + 1}`;
+    if (oldId !== newId) {
+      option.id = newId;
+      // Update any answers that reference this option
+      for (const promptId in answers.value) {
+        if (answers.value[promptId] === oldId) {
+          answers.value[promptId] = newId;
+        }
+      }
+    }
   });
 }
 
 const getPayload = () => {
-  return {
-    content: {
-      instructions: instructions.value,
-      passage: passage.value,
-      prompt: prompt.value,
-      options: options.value.filter((o) => o.text.trim()),
-    },
-    answer: {
-      correctOptionIds: correctOptionIds.value,
-    },
+  const content = {
+    instructions: instructions.value,
+    prompts: prompts.value.filter((p) => p.text.trim()),
+    options: options.value.filter((o) => o.text.trim()),
   };
+
+  const answer = { ...answers.value }; // Clone the answers object
+
+  return { content, answer };
 };
 
 defineExpose({ getPayload });
@@ -88,19 +129,23 @@ defineExpose({ getPayload });
                 class="dynamic-row"
               >
                 <span class="row-id">{{ prompt.id }}:</span>
-                <input type="text" v-model="prompt.text" class="form-input" />
-                <!-- SEMANTIC BUTTON COLOR: Destructive action -->
+                <input
+                  type="text"
+                  v-model="prompt.text"
+                  class="form-input"
+                  placeholder="Enter prompt text"
+                />
                 <button
                   v-if="prompts.length > 1"
                   type="button"
                   @click="removePrompt(index)"
                   class="btn btn-danger btn-sm"
+                  aria-label="Remove prompt"
                 >
                   &ndash;
                 </button>
               </div>
             </div>
-            <!-- SEMANTIC BUTTON COLOR: Additive/neutral action -->
             <button
               type="button"
               @click="addPrompt"
@@ -119,19 +164,23 @@ defineExpose({ getPayload });
                 class="dynamic-row"
               >
                 <span class="row-id">{{ option.id }}:</span>
-                <input type="text" v-model="option.text" class="form-input" />
-                <!-- SEMANTIC BUTTON COLOR: Destructive action -->
+                <input
+                  type="text"
+                  v-model="option.text"
+                  class="form-input"
+                  placeholder="Enter option text"
+                />
                 <button
                   v-if="options.length > 1"
                   type="button"
                   @click="removeOption(index)"
                   class="btn btn-danger btn-sm"
+                  aria-label="Remove option"
                 >
                   &ndash;
                 </button>
               </div>
             </div>
-            <!-- SEMANTIC BUTTON COLOR: Additive/neutral action -->
             <button
               type="button"
               @click="addOption"
@@ -155,17 +204,21 @@ defineExpose({ getPayload });
         </p>
         <div class="answer-grid">
           <div
-            v-for="prompt in prompts.filter((p) => p.text)"
+            v-for="prompt in prompts.filter((p) => p.text.trim())"
             :key="prompt.id"
             class="answer-row"
           >
             <label :for="`answer-${prompt.id}`" class="form-label">
               {{ prompt.text }} ({{ prompt.id }})
             </label>
-            <select v-model="answers[prompt.id]" class="form-select">
+            <select
+              :id="`answer-${prompt.id}`"
+              v-model="answers[prompt.id]"
+              class="form-select"
+            >
               <option :value="undefined">-- Select Option --</option>
               <option
-                v-for="option in options.filter((o) => o.text)"
+                v-for="option in options.filter((o) => o.text.trim())"
                 :key="option.id"
                 :value="option.id"
               >
@@ -173,6 +226,12 @@ defineExpose({ getPayload });
               </option>
             </select>
           </div>
+        </div>
+        <div
+          v-if="prompts.filter((p) => p.text.trim()).length === 0"
+          class="text-secondary"
+        >
+          No prompts available to match.
         </div>
       </div>
     </div>
@@ -207,7 +266,7 @@ defineExpose({ getPayload });
 
 .dynamic-row {
   display: grid;
-  grid-template-columns: 40px 1fr auto;
+  grid-template-columns: 60px 1fr auto;
   align-items: center;
   gap: var(--space-3);
 }
@@ -219,20 +278,22 @@ defineExpose({ getPayload });
 }
 
 .answer-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
 }
 
 .answer-row {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  align-items: center;
+  gap: var(--space-4);
 }
 
 .answer-row .form-label {
   margin: 0;
   font-weight: var(--font-medium);
+  text-align: left;
 }
 
 .mt-4 {

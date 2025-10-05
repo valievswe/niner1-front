@@ -11,9 +11,8 @@ const emit = defineEmits(["answer-updated"]);
 const studentAnswers = ref({ ...props.initialAnswer });
 
 const textParts = computed(() => {
-  return props.question.content.textWithGaps
-    .split(/({{\d+}})/g)
-    .filter(Boolean);
+  const text = props.question.content?.textWithGaps || "";
+  return text.split(/(\{\{\d+\}\})/g).filter(Boolean);
 });
 
 watch(
@@ -29,74 +28,97 @@ watch(
 </script>
 
 <template>
-  <div class="question-container card">
-    <div class="card-body">
-      <p class="instructions">{{ question.content.instructions }}</p>
-      <div class="gapped-text">
-        <template v-for="(part, index) in textParts" :key="index">
-          <span v-if="!part.startsWith('{{')">{{ part }}</span>
-          <input
-            v-else
-            type="text"
-            class="gap-input"
-            :placeholder="part.replace(/[{}]/g, '')"
-            v-model="studentAnswers[part.replace(/[{}]/g, '')]"
-          />
-        </template>
-      </div>
+  <div class="gap-fill-container">
+    <p v-if="question.content?.instructions" class="instructions">
+      {{ question.content.instructions }}
+    </p>
+    <div class="gapped-text">
+      <template v-for="(part, index) in textParts" :key="index">
+        <span v-if="!part.startsWith('{{')" class="text-part">{{ part }}</span>
+        <input
+          v-else
+          type="text"
+          class="gap-input"
+          :placeholder="`Gap ${part.replace(/[{}]/g, '')}`"
+          v-model="studentAnswers[part.replace(/[{}]/g, '')]"
+        />
+      </template>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* The main container adopts the .card component for consistency. */
-.question-container {
-  margin-bottom: var(--space-6); /* DS Spacing */
+.gap-fill-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 16px);
 }
 
-/* Instructions are styled using design system colors and fonts. */
 .instructions {
-  color: var(--text-secondary); /* DS Color */
-  font-size: var(--text-base);
+  margin: 0;
+  padding: var(--space-3, 12px);
+  background: var(--bg-secondary, #fafafa);
+  border-left: 3px solid var(--color-primary-600, #2c5282);
+  color: var(--text-secondary, #4a5568);
+  font-size: var(--text-sm, 13px);
   font-style: italic;
-  margin-bottom: var(--space-4); /* DS Spacing */
+  line-height: var(--leading-relaxed, 1.6);
+  border-radius: var(--radius-base, 4px);
 }
 
-/* The line height for reading passages is set from the design system. */
 .gapped-text {
-  line-height: var(--leading-loose); /* DS Line Height */
-  color: var(--text-primary);
+  line-height: var(--leading-loose, 1.8);
+  color: var(--text-primary, #1a202c);
+  font-size: var(--text-base, 15px);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0;
 }
 
-/* 
-  IMPROVEMENT:
-  The gap input is styled to look like a part of the sentence,
-  using a bottom border and inheriting font styles.
-  It uses design system variables for colors, transitions, and focus states.
-*/
+.text-part {
+  display: inline;
+  white-space: pre-wrap;
+}
+
 .gap-input {
-  width: 160px;
+  display: inline-block;
+  min-width: 120px;
+  max-width: 200px;
   border: none;
-  border-bottom: var(--border-width-thick) solid var(--border-primary); /* DS Border */
+  border-bottom: 2px solid var(--border-primary, #e2e8f0);
   background-color: transparent;
   text-align: center;
-  margin: 0 var(--space-1);
-  padding: var(--space-1) 0;
-
-  /* Typography inherited from design system */
-  font-family: var(--font-primary);
+  margin: 0 var(--space-1, 4px);
+  padding: var(--space-1, 4px) var(--space-2, 8px);
+  font-family: var(--font-primary, inherit);
   font-size: inherit;
-  color: var(--text-primary);
-
-  transition: border-color var(--transition-fast); /* DS Transition */
+  color: var(--text-primary, #1a202c);
+  transition: border-color var(--transition-fast, 150ms);
 }
 
 .gap-input::placeholder {
-  color: var(--text-disabled);
+  color: var(--text-disabled, #a0aec0);
+  font-size: var(--text-xs, 11px);
 }
 
 .gap-input:focus {
   outline: none;
-  border-bottom-color: var(--border-focus); /* DS Focus Color */
+  border-bottom-color: var(--border-focus, #2c5282);
+  background-color: rgba(44, 82, 130, 0.02);
+}
+
+.gap-input:not(:placeholder-shown) {
+  font-weight: var(--font-semibold, 600);
+  border-bottom-color: var(--color-success-500, #38a169);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .gap-input {
+    min-width: 100px;
+    max-width: 150px;
+    font-size: 14px;
+  }
 }
 </style>

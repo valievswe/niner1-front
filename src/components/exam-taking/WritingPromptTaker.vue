@@ -46,6 +46,7 @@ const wordCount = computed(() => {
         v-model="writingResponse"
         class="writing-textarea form-textarea"
         placeholder="Type your response here..."
+        spellcheck="false"
       ></textarea>
 
       <div class="word-count">
@@ -94,6 +95,11 @@ const wordCount = computed(() => {
 .writing-textarea {
   min-height: 250px;
   margin-top: var(--space-4);
+  /* Disable spellcheck styling */
+  -webkit-text-decoration: underline var(--text-danger);
+  text-decoration: underline var(--text-danger);
+  -webkit-text-decoration-style: wavy;
+  text-decoration-style: wavy;
 }
 
 .word-count {
