@@ -4,6 +4,8 @@ import { ref, computed, watch } from "vue";
 const props = defineProps({
   question: { type: Object, required: true },
   initialAnswer: { type: Object, default: () => ({}) },
+  displayNumberStart: { type: Number, default: null },
+  displayNumberEnd: { type: Number, default: null },
 });
 
 const emit = defineEmits(["answer-updated"]);
@@ -39,7 +41,7 @@ watch(
           v-else
           type="text"
           class="gap-input"
-          :placeholder="`Gap ${part.replace(/[{}]/g, '')}`"
+          :placeholder="`___`"
           v-model="studentAnswers[part.replace(/[{}]/g, '')]"
         />
       </template>

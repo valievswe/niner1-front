@@ -23,6 +23,7 @@ const explanation = ref("");
 const formComponentRef = ref(null);
 const successMessage = ref("");
 const errorMessage = ref("");
+const formKey = ref(0);
 
 const formComponentMap = {
   TRUE_FALSE_NOT_GIVEN: TrueFalseForm,
@@ -82,8 +83,18 @@ async function saveQuestion() {
       answer,
       explanation: explanation.value,
     });
-    successMessage.value = "Question created successfully! Redirecting...";
-    setTimeout(() => router.push("/admin/questions"), 1500);
+    successMessage.value = "Question created successfully!";
+
+    // Reset only the form fields, keep section/set/part selections
+    explanation.value = "";
+
+    // Force re-render of the form component to get a fresh form
+    formKey.value++;
+
+    // Clear success message after 3 seconds
+    setTimeout(() => {
+      successMessage.value = "";
+    }, 3000);
   } catch (error) {
     errorMessage.value =
       error.response?.data?.error || "Failed to save question.";
@@ -223,7 +234,7 @@ async function saveQuestion() {
           <component
             :is="currentFormComponent"
             ref="formComponentRef"
-            :key="questionType"
+            :key="formKey"
           />
         </div>
         <div class="card-footer">

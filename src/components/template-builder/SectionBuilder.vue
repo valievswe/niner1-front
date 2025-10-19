@@ -105,6 +105,32 @@ function closeModal() {
   isModalVisible.value = false;
   questionForDetailView.value = null;
 }
+
+// Group selected questions by part number for better organization
+const groupedQuestions = computed(() => {
+  const groups = {};
+  selectedQuestions.value.forEach((question) => {
+    const part = question.partNumber || 1;
+    if (!groups[part]) {
+      groups[part] = [];
+    }
+    groups[part].push(question);
+  });
+  return groups;
+});
+
+// Get part label based on section
+function getPartLabel(partNumber) {
+  if (props.section === 'LISTENING') {
+    return `Part ${partNumber}`;
+  } else if (props.section === 'READING') {
+    return `Passage ${partNumber}`;
+  } else if (props.section === 'WRITING') {
+    return `Task ${partNumber}`;
+  }
+  return `Part ${partNumber}`;
+}
+
 defineExpose({ selectedQuestions });
 </script>
 
@@ -172,7 +198,9 @@ defineExpose({ selectedQuestions });
     <!-- Column 2: Selected Questions for this Section -->
     <div class="card">
       <div class="card-header">
-        <h4 class="card-title">Selected for Template</h4>
+        <h4 class="card-title">
+          Selected for Template ({{ selectedQuestions.length }} questions)
+        </h4>
       </div>
       <div class="card-body scrollable-list">
         <p v-if="selectedQuestions.length === 0" class="empty-state">
@@ -184,37 +212,57 @@ defineExpose({ selectedQuestions });
           class="drag-area"
           handle=".drag-handle"
           ghost-class="ghost-item"
+          chosen-class="chosen-item"
+          drag-class="drag-item"
+          :animation="200"
+          tag="div"
         >
           <template #item="{ element, index }">
-            <div class="draggable-item">
-              <span class="drag-handle" aria-label="Drag to reorder">
-                <svg
-                  width="24"
-                  height="24"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <circle cx="9" cy="12" r="1" />
-                  <circle cx="9" cy="5" r="1" />
-                  <circle cx="9" cy="19" r="1" />
-                  <circle cx="15" cy="12" r="1" />
-                  <circle cx="15" cy="5" r="1" />
-                  <circle cx="15" cy="19" r="1" />
-                </svg>
-              </span>
-              <span class="item-index">{{ index + 1 }}.</span>
-              <QuestionPreview :question="element" />
-              <button
-                @click="removeQuestion(index)"
-                class="btn btn-danger btn-sm"
-                aria-label="Remove Question"
+            <div class="draggable-wrapper">
+              <!-- Show part divider when part number changes -->
+              <div
+                v-if="
+                  index === 0 ||
+                  element.partNumber !== selectedQuestions[index - 1].partNumber
+                "
+                class="part-divider"
               >
-                &times;
-              </button>
+                <span class="part-label">{{
+                  getPartLabel(element.partNumber || 1)
+                }}</span>
+                <div class="divider-line"></div>
+              </div>
+
+              <div class="draggable-item">
+                <span class="drag-handle" aria-label="Drag to reorder">
+                  <svg
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <circle cx="9" cy="12" r="1" />
+                    <circle cx="9" cy="5" r="1" />
+                    <circle cx="9" cy="19" r="1" />
+                    <circle cx="15" cy="12" r="1" />
+                    <circle cx="15" cy="5" r="1" />
+                    <circle cx="15" cy="19" r="1" />
+                  </svg>
+                </span>
+                <span class="item-index">{{ index + 1 }}.</span>
+                <QuestionPreview :question="element" />
+                <button
+                  @click="removeQuestion(index)"
+                  class="btn btn-danger btn-sm"
+                  aria-label="Remove Question"
+                >
+                  &times;
+                </button>
+              </div>
             </div>
           </template>
         </draggable>
@@ -318,6 +366,9 @@ defineExpose({ selectedQuestions });
   flex-direction: column;
   gap: var(--space-2);
 }
+.draggable-wrapper {
+  /* Wrapper for each draggable item to contain both divider and item */
+}
 .draggable-item {
   display: grid;
   grid-template-columns: auto auto 1fr auto;
@@ -332,16 +383,57 @@ defineExpose({ selectedQuestions });
 .drag-handle {
   cursor: grab;
   color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+}
+.drag-handle:active {
+  cursor: grabbing;
 }
 .item-index {
   font-family: var(--font-mono);
   color: var(--text-secondary);
 }
 .ghost-item {
+  opacity: 0.5;
   background-color: var(--color-primary-50);
-  border: 1px dashed var(--color-primary-300);
+  border: 2px dashed var(--color-primary-400);
 }
-.ghost-item > * {
-  opacity: 0;
+.chosen-item {
+  background-color: var(--color-primary-100);
+  box-shadow: var(--shadow-md);
+}
+.drag-item {
+  opacity: 1;
+}
+
+/* Part dividers */
+.part-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-5) 0 var(--space-3) 0;
+}
+.part-divider:first-child {
+  margin-top: 0;
+}
+.part-label {
+  font-weight: var(--font-bold);
+  font-size: var(--text-sm);
+  color: var(--color-primary-700);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  white-space: nowrap;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-primary-100);
+  border-radius: var(--radius-base);
+}
+.divider-line {
+  flex-grow: 1;
+  height: 2px;
+  background: linear-gradient(
+    to right,
+    var(--color-primary-300),
+    transparent
+  );
 }
 </style>

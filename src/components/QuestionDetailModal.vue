@@ -20,7 +20,8 @@ const findItemTextById = (itemList, id) => {
 // Helper to parse the Gap Filling text into displayable parts
 const textParts = computed(() => {
   if (
-    props.question?.questionType === "GAP_FILLING" &&
+    (props.question?.questionType === "GAP_FILLING" ||
+      props.question?.questionType === "SUMMARY_COMPLETION") &&
     props.question.content.textWithGaps
   ) {
     return props.question.content.textWithGaps
@@ -155,6 +156,114 @@ const textParts = computed(() => {
                     </span>
                   </template>
                 </p>
+              </div>
+            </div>
+
+            <!-- Summary Completion -->
+            <div v-else-if="question.questionType === 'SUMMARY_COMPLETION'">
+              <div class="content-block">
+                <h5 class="content-title">Summary with Answers</h5>
+                <p class="gapped-text">
+                  <template v-for="(part, index) in textParts" :key="index">
+                    <span v-if="!part.startsWith('{{')">{{ part }}</span>
+                    <span v-else class="gap-answer">
+                      {{ question.answer[part.replace(/[{}]/g, "")] || "???" }}
+                    </span>
+                  </template>
+                </p>
+              </div>
+            </div>
+
+            <!-- Matching -->
+            <div v-else-if="question.questionType === 'MATCHING'">
+              <div class="content-block">
+                <h5 class="content-title">Match Pairs</h5>
+                <div class="matching-grid">
+                  <div class="matching-column">
+                    <h6>Prompts</h6>
+                    <ul class="matching-list">
+                      <li
+                        v-for="prompt in question.content.prompts"
+                        :key="prompt.id"
+                      >
+                        <span class="item-id">{{ prompt.id }}</span>
+                        <span>{{ prompt.text }}</span>
+                      </li>
+                    </ul>
+                  </div>
+                  <div class="matching-column">
+                    <h6>Options</h6>
+                    <ul class="matching-list">
+                      <li
+                        v-for="option in question.content.options"
+                        :key="option.id"
+                      >
+                        <span class="item-id">{{ option.id }}</span>
+                        <span>{{ option.text }}</span>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+              <div class="content-block">
+                <h5 class="content-title">Correct Matches</h5>
+                <ul class="answer-list">
+                  <li
+                    v-for="prompt in question.content.prompts"
+                    :key="prompt.id"
+                  >
+                    <span
+                      ><strong>{{ prompt.text }}</strong></span
+                    >
+                    <span class="arrow">→</span>
+                    <span>{{
+                      findItemTextById(
+                        question.content.options,
+                        question.answer[prompt.id]
+                      )
+                    }}</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Map Labeling -->
+            <div v-else-if="question.questionType === 'MAP_LABELING'">
+              <div class="content-block">
+                <h5 class="content-title">Map Image</h5>
+                <img
+                  v-if="question.content.imageUrl"
+                  :src="question.content.imageUrl"
+                  alt="Map"
+                  class="map-image"
+                />
+                <p v-else class="text-secondary">No map image provided.</p>
+              </div>
+              <div class="content-block">
+                <h5 class="content-title">Available Labels</h5>
+                <ul class="label-list">
+                  <li v-for="label in question.content.labels" :key="label.id">
+                    <span class="item-id">{{ label.id }}</span>
+                    <span>{{ label.text }}</span>
+                  </li>
+                </ul>
+              </div>
+              <div class="content-block">
+                <h5 class="content-title">Correct Label Positions</h5>
+                <ul class="answer-list">
+                  <li
+                    v-for="(labelId, location) in question.answer"
+                    :key="location"
+                  >
+                    <span
+                      ><strong>Location {{ location }}</strong></span
+                    >
+                    <span class="arrow">→</span>
+                    <span>{{
+                      findItemTextById(question.content.labels, labelId)
+                    }}</span>
+                  </li>
+                </ul>
               </div>
             </div>
 
@@ -318,6 +427,76 @@ pre {
 }
 .mt-4 {
   margin-top: var(--space-4);
+}
+
+/* Matching styles */
+.matching-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-6);
+  margin-bottom: var(--space-4);
+}
+.matching-column h6 {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  margin-bottom: var(--space-3);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wide);
+}
+.matching-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.matching-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background-color: var(--bg-secondary);
+  border-radius: var(--radius-base);
+}
+.item-id {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 50px;
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-primary-100);
+  color: var(--color-primary-800);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--font-bold);
+  flex-shrink: 0;
+}
+.arrow {
+  font-size: var(--text-lg);
+  color: var(--color-primary-600);
+  font-weight: var(--font-bold);
+}
+
+/* Label list styles */
+.label-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--space-2);
+}
+.label-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background-color: var(--bg-secondary);
+  border-radius: var(--radius-base);
 }
 
 /* Modal Transitions */

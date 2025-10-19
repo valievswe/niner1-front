@@ -26,6 +26,22 @@ async function fetchSubmission() {
       `/marking/submissions/${route.params.id}`
     );
     submission.value = response.data;
+
+    // DEBUG: Log submission data to understand answer format
+    console.log('=== SUBMISSION DATA DEBUG ===');
+    console.log('Full submission:', response.data);
+    console.log('Student Answers Count:', response.data.studentAnswers?.length);
+
+    if (response.data.studentAnswers && response.data.studentAnswers.length > 0) {
+      console.log('Sample Answer Structure:', {
+        first: response.data.studentAnswers[0],
+        questionType: response.data.studentAnswers[0]?.question?.questionType,
+        answerValue: response.data.studentAnswers[0]?.answer,
+        answerType: typeof response.data.studentAnswers[0]?.answer,
+      });
+    }
+    console.log('=== END DEBUG ===');
+
     const initialScores = {};
     submission.value.studentAnswers.forEach((sa) => {
       if (sa.question.section === "WRITING") {
@@ -38,6 +54,7 @@ async function fetchSubmission() {
     manualScores.value = initialScores;
   } catch (error) {
     errorMessage.value = "Failed to load submission data.";
+    console.error('Failed to load submission:', error);
   } finally {
     loading.value = false;
   }

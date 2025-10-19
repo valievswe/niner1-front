@@ -22,9 +22,19 @@ const previewText = computed(() => {
       text = content.prompt || "No prompt available";
       break;
     case "GAP_FILLING":
+      text = content.textWithGaps || content.instructions || "No text available";
+      break;
+    case "SUMMARY_COMPLETION":
+      text = content.textWithGaps || content.instructions || "No summary available";
+      break;
     case "MAP_LABELING":
+      const labelCount = content.labels?.length || 0;
+      text = `${content.instructions || "Label the map"} (${labelCount} labels)`;
+      break;
     case "MATCHING":
-      text = content.instructions || "No instructions available";
+      const promptCount = content.prompts?.length || 0;
+      const optionCount = content.options?.length || 0;
+      text = `${content.instructions || "Match items"} (${promptCount} prompts, ${optionCount} options)`;
       break;
     case "WRITING_PROMPT":
       text = content.prompt || "No prompt available";
@@ -35,14 +45,27 @@ const previewText = computed(() => {
 
   return text.length > 70 ? text.substring(0, 70) + "..." : text;
 });
+
+// Get part label based on section
+const partLabel = computed(() => {
+  const part = props.question.partNumber || 1;
+  if (props.question.section === 'LISTENING') {
+    return `P${part}`;
+  } else if (props.question.section === 'READING') {
+    return `Pass${part}`;
+  } else if (props.question.section === 'WRITING') {
+    return `T${part}`;
+  }
+  return `P${part}`;
+});
 </script>
 
 <template>
   <div class="preview-container">
+    <span class="part-badge">{{ partLabel }}</span>
     <span class="type-badge">{{
       question.questionType.replace(/_/g, " ")
     }}</span>
-    <span class="section">({{ question.section }})</span>
     <span class="preview-text">&ldquo;{{ previewText }}&rdquo;</span>
   </div>
 </template>
@@ -74,11 +97,19 @@ const previewText = computed(() => {
   letter-spacing: var(--tracking-wider);
 }
 
-.section {
+.part-badge {
   flex-shrink: 0;
-  color: var(--text-tertiary);
-  font-size: var(--text-sm);
-  font-weight: var(--font-medium);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 24px;
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-success-100);
+  color: var(--color-success-800);
+  border-radius: var(--radius-full);
+  font-weight: var(--font-bold);
+  font-size: var(--text-xs);
 }
 
 .preview-text {

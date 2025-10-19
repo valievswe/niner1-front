@@ -14,6 +14,15 @@ const currentPage = ref(1);
 const totalPages = ref(1); // Will be updated by the API response
 const itemsPerPage = 10;
 
+// --- Filter State ---
+const filterSection = ref("ALL");
+const filterPart = ref("ALL");
+const filterType = ref("ALL");
+
+// --- Sort State ---
+const sortBy = ref("section"); // Default sort by section
+const sortOrder = ref("ASC");
+
 // --- Modal State ---
 const isModalVisible = ref(false);
 const questionToDelete = ref(null);
@@ -23,9 +32,24 @@ const questionToDelete = ref(null);
 const fetchQuestions = async (page) => {
   loading.value = true;
   try {
-    const response = await apiClient.get(
-      `/questions?page=${page}&limit=${itemsPerPage}`
-    );
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: itemsPerPage.toString(),
+      sortBy: sortBy.value,
+      sortOrder: sortOrder.value,
+    });
+
+    if (filterSection.value !== "ALL") {
+      params.append("section", filterSection.value);
+    }
+    if (filterPart.value !== "ALL") {
+      params.append("partNumber", filterPart.value);
+    }
+    if (filterType.value !== "ALL") {
+      params.append("questionType", filterType.value);
+    }
+
+    const response = await apiClient.get(`/questions?${params.toString()}`);
     questions.value = response.data.items;
     totalPages.value = response.data.totalPages;
     currentPage.value = response.data.currentPage;
@@ -35,6 +59,25 @@ const fetchQuestions = async (page) => {
     loading.value = false;
   }
 };
+
+// Apply filters and reset to page 1
+function applyFilters() {
+  currentPage.value = 1;
+  fetchQuestions(1);
+}
+
+// Sort by column
+function sortByColumn(column) {
+  if (sortBy.value === column) {
+    // Toggle sort order
+    sortOrder.value = sortOrder.value === "ASC" ? "DESC" : "ASC";
+  } else {
+    sortBy.value = column;
+    sortOrder.value = "ASC";
+  }
+  currentPage.value = 1;
+  fetchQuestions(1);
+}
 
 // Fetch the initial page when the component mounts
 onMounted(() => {
@@ -101,6 +144,63 @@ function getPreviewText(question) {
       </RouterLink>
     </div>
 
+    <!-- Filters Card -->
+    <div class="card filters-card">
+      <div class="card-body">
+        <div class="filters-grid">
+          <div class="form-group">
+            <label for="filterSection" class="form-label">Section</label>
+            <select
+              id="filterSection"
+              v-model="filterSection"
+              @change="applyFilters"
+              class="form-select"
+            >
+              <option value="ALL">All Sections</option>
+              <option value="LISTENING">Listening</option>
+              <option value="READING">Reading</option>
+              <option value="WRITING">Writing</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="filterPart" class="form-label">Part/Passage/Task</label>
+            <select
+              id="filterPart"
+              v-model="filterPart"
+              @change="applyFilters"
+              class="form-select"
+            >
+              <option value="ALL">All Parts</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="filterType" class="form-label">Question Type</label>
+            <select
+              id="filterType"
+              v-model="filterType"
+              @change="applyFilters"
+              class="form-select"
+            >
+              <option value="ALL">All Types</option>
+              <option value="TRUE_FALSE_NOT_GIVEN">True/False/Not Given</option>
+              <option value="MULTIPLE_CHOICE_MULTIPLE_ANSWER">
+                Multiple Choice
+              </option>
+              <option value="GAP_FILLING">Gap Filling</option>
+              <option value="SUMMARY_COMPLETION">Summary Completion</option>
+              <option value="MATCHING">Matching</option>
+              <option value="MAP_LABELING">Map Labeling</option>
+              <option value="WRITING_PROMPT">Writing Prompt</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="card">
       <div class="card-body">
         <div v-if="loading" class="loading-state">
@@ -119,7 +219,24 @@ function getPreviewText(question) {
           <table class="table">
             <thead>
               <tr>
-                <th>Question</th>
+                <th class="sortable" @click="sortByColumn('section')">
+                  Section
+                  <span v-if="sortBy === 'section'" class="sort-indicator">
+                    {{ sortOrder === "ASC" ? "↑" : "↓" }}
+                  </span>
+                </th>
+                <th class="sortable" @click="sortByColumn('partNumber')">
+                  Part
+                  <span v-if="sortBy === 'partNumber'" class="sort-indicator">
+                    {{ sortOrder === "ASC" ? "↑" : "↓" }}
+                  </span>
+                </th>
+                <th class="sortable" @click="sortByColumn('questionType')">
+                  Question
+                  <span v-if="sortBy === 'questionType'" class="sort-indicator">
+                    {{ sortOrder === "ASC" ? "↑" : "↓" }}
+                  </span>
+                </th>
                 <th>Set</th>
                 <th class="actions-column">Actions</th>
               </tr>
@@ -127,18 +244,22 @@ function getPreviewText(question) {
             <tbody>
               <tr v-for="question in questions" :key="question.id">
                 <td>
+                  <span class="badge badge-info">{{ question.section }}</span>
+                </td>
+                <td>
+                  <span class="part-badge">{{ question.partNumber || 1 }}</span>
+                </td>
+                <td>
                   <div class="question-preview-cell">
                     <span class="badge badge-primary">{{
                       question.questionType.replace(/_/g, " ")
                     }}</span>
-                    <span class="text-secondary">({{ question.section }})</span>
                     <span class="preview-text"
                       >"{{ getPreviewText(question) }}"</span
                     >
                   </div>
                 </td>
                 <td>
-                  <!-- THIS IS THE FIX: Accessing the nested questionSet name -->
                   <span class="text-secondary">{{
                     question.questionSet?.name || "N/A"
                   }}</span>
@@ -219,6 +340,19 @@ function getPreviewText(question) {
   text-transform: uppercase;
   letter-spacing: var(--tracking-wide);
 }
+.table th.sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: background-color var(--transition-fast);
+}
+.table th.sortable:hover {
+  background-color: var(--bg-secondary);
+}
+.sort-indicator {
+  margin-left: var(--space-1);
+  font-size: var(--text-lg);
+  color: var(--color-primary-600);
+}
 .actions-column {
   width: 1%;
   white-space: nowrap;
@@ -254,5 +388,30 @@ function getPreviewText(question) {
   align-items: center;
   font-size: var(--text-sm);
   color: var(--text-secondary);
+}
+
+/* Filters */
+.filters-card {
+  margin-bottom: var(--space-6);
+}
+.filters-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-4);
+}
+
+/* Part badge */
+.part-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-primary-100);
+  color: var(--color-primary-700);
+  border-radius: var(--radius-full);
+  font-weight: var(--font-bold);
+  font-size: var(--text-sm);
 }
 </style>

@@ -30,12 +30,29 @@ const gapFillResults = computed(() => {
     props.question.questionType === "GAP_FILLING" ||
     props.question.questionType === "SUMMARY_COMPLETION"
   ) {
-    // Correct answers are in question.answer, NOT question.content.correctAnswers
+    // Correct answers can be in question.answer or content.correctAnswers
     const correctAnswers =
       props.question.answer || props.question.content?.correctAnswers || {};
-    const studentAnswers = props.studentAnswer || {};
+
+    // Student answers might be nested or direct object
+    let studentAnswers = props.studentAnswer || {};
+
+    // Handle case where backend might wrap answers
+    if (studentAnswers.answers && typeof studentAnswers.answers === 'object') {
+      studentAnswers = studentAnswers.answers;
+    }
+
     const results = [];
 
+    console.log('Gap Fill Debug:', {
+      questionType: props.question.questionType,
+      rawStudentAnswer: props.studentAnswer,
+      parsedStudentAnswers: studentAnswers,
+      correctAnswers,
+      questionAnswer: props.question.answer,
+    });
+
+    // Iterate over all gaps in correct answers
     Object.keys(correctAnswers).forEach((gapNum) => {
       const studentAns = studentAnswers[gapNum];
       const correctAns = correctAnswers[gapNum];
@@ -56,9 +73,22 @@ const gapFillResults = computed(() => {
 const trueFalseResults = computed(() => {
   if (props.question.questionType === "TRUE_FALSE_NOT_GIVEN") {
     const statements = props.question.content?.statements || [];
-    const studentAnswers = props.studentAnswer || {};
+
+    // Student answers might be nested or direct object
+    let studentAnswers = props.studentAnswer || {};
+    if (studentAnswers.answers && typeof studentAnswers.answers === 'object') {
+      studentAnswers = studentAnswers.answers;
+    }
+
     // Correct answers are in question.answer
     const correctAnswersMap = props.question.answer || {};
+
+    console.log('True/False Debug:', {
+      statements: statements.length,
+      studentAnswers,
+      correctAnswersMap,
+      questionAnswer: props.question.answer,
+    });
 
     return statements.map((statement) => {
       const studentAns = studentAnswers[statement.id];
@@ -80,19 +110,49 @@ const trueFalseResults = computed(() => {
 // MULTIPLE CHOICE - Compare selected options
 const multipleChoiceResults = computed(() => {
   if (props.question.questionType === "MULTIPLE_CHOICE_MULTIPLE_ANSWER") {
-    // Correct answers are in question.answer
-    const correctAnswers =
-      props.question.answer || props.question.content?.correctAnswers || [];
-    const studentAnswers = Array.isArray(props.studentAnswer)
-      ? props.studentAnswer
-      : [];
+    // Correct answers can be in multiple locations
+    let correctAnswers = [];
+
+    // Priority 1: question.answer (backend stores here)
+    if (props.question.answer) {
+      if (Array.isArray(props.question.answer)) {
+        correctAnswers = props.question.answer;
+      } else if (props.question.answer.correctOptionIds) {
+        correctAnswers = props.question.answer.correctOptionIds;
+      }
+    }
+
+    // Priority 2: Fallback to content.correctAnswers
+    if (correctAnswers.length === 0 && props.question.content?.correctAnswers) {
+      correctAnswers = props.question.content.correctAnswers;
+    }
+
+    // Handle student answer format variations
+    let studentAnswers = [];
+    if (Array.isArray(props.studentAnswer)) {
+      studentAnswers = props.studentAnswer;
+    } else if (props.studentAnswer && props.studentAnswer.correctOptionIds) {
+      studentAnswers = props.studentAnswer.correctOptionIds;
+    }
+
+    console.log('Multiple Choice Debug:', {
+      questionId: props.question.id,
+      rawStudentAnswer: props.studentAnswer,
+      studentAnswerType: typeof props.studentAnswer,
+      parsedStudentAnswers: studentAnswers,
+      rawCorrectAnswer: props.question.answer,
+      parsedCorrectAnswers: correctAnswers,
+      contentOptions: props.question.content?.options,
+    });
 
     return {
       studentSelected: studentAnswers,
       correctAnswers: correctAnswers,
       isCorrect:
-        JSON.stringify(studentAnswers.sort()) ===
-        JSON.stringify(correctAnswers.sort()),
+        studentAnswers.length > 0 &&
+        correctAnswers.length > 0 &&
+        JSON.stringify([...studentAnswers].sort()) ===
+        JSON.stringify([...correctAnswers].sort()),
     };
   }
   return null;
@@ -106,6 +166,13 @@ const matchingResults = computed(() => {
       props.question.answer || props.question.content?.correctAnswers || {};
     const studentAnswers = props.studentAnswer || {};
     const prompts = props.question.content?.prompts || [];
+    const options = props.question.content?.options || [];
+
+    // Create a map of option IDs to their text
+    const optionTextMap = {};
+    options.forEach((option) => {
+      optionTextMap[option.id] = option.text;
+    });
 
     return prompts.map((prompt) => {
       const studentAns = studentAnswers[prompt.id];
@@ -113,14 +180,102 @@ const matchingResults = computed(() => {
       return {
         promptId: prompt.id,
         promptText: prompt.text,
-        studentAnswer: studentAns || "NOT ANSWERED",
-        correctAnswer: correctAns,
+        studentAnswer: studentAns
+          ? optionTextMap[studentAns] || studentAns
+          : "NOT ANSWERED",
+        correctAnswer: optionTextMap[correctAns] || correctAns,
         isCorrect: studentAns === correctAns,
       };
     });
   }
   return [];
 });
+
+// MAP LABELING - Compare labels for each location
+const mapLabelingResults = computed(() => {
+  if (props.question.questionType === "MAP_LABELING") {
+    // Correct answers are in question.answer (location -> label ID)
+    const correctAnswers =
+      props.question.answer || props.question.content?.correctAnswers || {};
+    const studentAnswers = props.studentAnswer || {};
+    const labels = props.question.content?.labels || [];
+
+    // Create a map of label IDs to their text
+    const labelTextMap = {};
+    labels.forEach((label) => {
+      labelTextMap[label.id] = label.text;
+    });
+
+    // Get all location numbers from correct answers
+    const locations = Object.keys(correctAnswers).sort((a, b) => parseInt(a) - parseInt(b));
+
+    return locations.map((location) => {
+      const studentAns = studentAnswers[location];
+      const correctAns = correctAnswers[location];
+      return {
+        location: location,
+        studentAnswer: studentAns
+          ? labelTextMap[studentAns] || studentAns
+          : "NOT ANSWERED",
+        correctAnswer: labelTextMap[correctAns] || correctAns,
+        isCorrect: studentAns === correctAns,
+      };
+    });
+  }
+  return [];
+});
+
+// Parse gap-fill text and replace {{1}}, {{2}}, etc. with student answers
+function parseGapText(textWithGaps, studentAnswers) {
+  if (!textWithGaps) return [];
+
+  const parts = [];
+  const regex = /\{\{(\d+)\}\}/g;
+  let lastIndex = 0;
+  let match;
+
+  // Get student answers and correct answers
+  let studentAns = studentAnswers || {};
+  if (studentAns.answers && typeof studentAns.answers === 'object') {
+    studentAns = studentAns.answers;
+  }
+
+  const correctAnswers = props.question.answer || {};
+
+  while ((match = regex.exec(textWithGaps)) !== null) {
+    // Add text before the gap
+    if (match.index > lastIndex) {
+      parts.push({
+        isGap: false,
+        text: textWithGaps.substring(lastIndex, match.index),
+      });
+    }
+
+    // Add the gap
+    const gapNum = match[1];
+    const studentAnswer = studentAns[gapNum];
+    const correctAnswer = correctAnswers[gapNum];
+
+    parts.push({
+      isGap: true,
+      gapNum: gapNum,
+      answer: studentAnswer || "",
+      isCorrect: isCorrect(studentAnswer, correctAnswer),
+    });
+
+    lastIndex = regex.lastIndex;
+  }
+
+  // Add remaining text after last gap
+  if (lastIndex < textWithGaps.length) {
+    parts.push({
+      isGap: false,
+      text: textWithGaps.substring(lastIndex),
+    });
+  }
+
+  return parts;
+}
 </script>
 
 <template>
@@ -171,7 +326,7 @@ const matchingResults = computed(() => {
       </div>
     </div>
 
-    <!-- GAP FILLING - Show comparison table -->
+    <!-- GAP FILLING - Show text with gaps filled and comparison table -->
     <div
       v-else-if="
         question.questionType === 'GAP_FILLING' ||
@@ -179,34 +334,68 @@ const matchingResults = computed(() => {
       "
       class="gap-fill-section"
     >
-      <div class="results-table">
-        <div class="table-header">
-          <span>Gap</span>
-          <span>Student Answer</span>
-          <span>Correct Answer</span>
-          <span>Result</span>
+      <div v-if="gapFillResults.length === 0" class="empty-answer-notice">
+        <p>⚠️ No answers to display</p>
+        <p class="debug-info">Check browser console for debugging information</p>
+      </div>
+      <div v-else>
+        <!-- Show text with gaps filled in -->
+        <div v-if="question.content?.textWithGaps" class="gap-text-preview">
+          <h6>Text with Student's Answers:</h6>
+          <div class="filled-text">
+            <span
+              v-for="(part, index) in parseGapText(
+                question.content.textWithGaps,
+                studentAnswer
+              )"
+              :key="index"
+            >
+              <template v-if="part.isGap">
+                <span
+                  class="gap-filled"
+                  :class="{
+                    'gap-correct': part.isCorrect,
+                    'gap-wrong': !part.isCorrect && part.answer,
+                    'gap-empty': !part.answer,
+                  }"
+                  >{{ part.answer || `[${part.gapNum}]` }}</span
+                >
+              </template>
+              <template v-else>{{ part.text }}</template>
+            </span>
+          </div>
         </div>
-        <div
-          v-for="result in gapFillResults"
-          :key="result.gapNumber"
-          class="table-row"
-        >
-          <span class="gap-num">{{ result.gapNumber }}</span>
-          <span
-            class="student-ans"
-            :class="{
-              correct: result.isCorrect,
-              wrong: !result.isCorrect && result.studentAnswer,
-            }"
+
+        <!-- Comparison table -->
+        <div class="results-table">
+          <div class="table-header">
+            <span>Gap</span>
+            <span>Student Answer</span>
+            <span>Correct Answer</span>
+            <span>Result</span>
+          </div>
+          <div
+            v-for="result in gapFillResults"
+            :key="result.gapNumber"
+            class="table-row"
           >
-            {{ result.studentAnswer || "—" }}
-          </span>
-          <span class="correct-ans">{{ result.correctAnswer }}</span>
-          <span class="result-icon">
-            <span v-if="result.isCorrect" class="icon-correct">✓</span>
-            <span v-else-if="result.studentAnswer" class="icon-wrong">✗</span>
-            <span v-else class="icon-empty">—</span>
-          </span>
+            <span class="gap-num">{{ result.gapNumber }}</span>
+            <span
+              class="student-ans"
+              :class="{
+                correct: result.isCorrect,
+                wrong: !result.isCorrect && result.studentAnswer,
+              }"
+            >
+              {{ result.studentAnswer || "—" }}
+            </span>
+            <span class="correct-ans">{{ result.correctAnswer }}</span>
+            <span class="result-icon">
+              <span v-if="result.isCorrect" class="icon-correct">✓</span>
+              <span v-else-if="result.studentAnswer" class="icon-wrong">✗</span>
+              <span v-else class="icon-empty">—</span>
+            </span>
+          </div>
         </div>
       </div>
     </div>
@@ -351,9 +540,40 @@ const matchingResults = computed(() => {
         alt="Map"
         class="task-image"
       />
-      <div class="answer-box">
-        <h6>Student's Labels:</h6>
-        <pre>{{ JSON.stringify(studentAnswer, null, 2) }}</pre>
+      <div class="results-table">
+        <div class="table-header">
+          <span>Location</span>
+          <span>Student Label</span>
+          <span>Correct Label</span>
+          <span>Result</span>
+        </div>
+        <div
+          v-for="result in mapLabelingResults"
+          :key="result.location"
+          class="table-row"
+        >
+          <span class="location-num">{{ result.location }}</span>
+          <span
+            class="student-ans"
+            :class="{
+              correct: result.isCorrect,
+              wrong:
+                !result.isCorrect && result.studentAnswer !== 'NOT ANSWERED',
+            }"
+          >
+            {{ result.studentAnswer }}
+          </span>
+          <span class="correct-ans">{{ result.correctAnswer }}</span>
+          <span class="result-icon">
+            <span v-if="result.isCorrect" class="icon-correct">✓</span>
+            <span
+              v-else-if="result.studentAnswer !== 'NOT ANSWERED'"
+              class="icon-wrong"
+              >✗</span
+            >
+            <span v-else class="icon-empty">—</span>
+          </span>
+        </div>
       </div>
     </div>
 
@@ -381,6 +601,24 @@ const matchingResults = computed(() => {
   border-radius: var(--radius-base, 4px);
   font-size: var(--text-sm, 13px);
   line-height: var(--leading-relaxed, 1.6);
+}
+
+.empty-answer-notice {
+  padding: var(--space-5, 20px);
+  background: var(--color-warning-50, #fffbeb);
+  border: 2px solid var(--color-warning-300, #fcd34d);
+  border-radius: var(--radius-base, 4px);
+  text-align: center;
+}
+
+.empty-answer-notice p {
+  margin: var(--space-2, 8px) 0;
+}
+
+.debug-info {
+  font-size: var(--text-xs, 11px);
+  color: var(--text-secondary, #4a5568);
+  font-style: italic;
 }
 
 /* Results Table */
@@ -413,6 +651,7 @@ const matchingResults = computed(() => {
 }
 
 .gap-num,
+.location-num,
 .result-icon {
   text-align: center;
   font-weight: var(--font-semibold, 600);
@@ -575,6 +814,57 @@ const matchingResults = computed(() => {
 .prompt-text {
   font-size: var(--text-sm, 13px);
   line-height: var(--leading-relaxed, 1.6);
+}
+
+/* Gap-fill text preview */
+.gap-text-preview {
+  padding: var(--space-4, 16px);
+  background: var(--bg-secondary, #fafafa);
+  border: 1px solid var(--border-primary, #e2e8f0);
+  border-radius: var(--radius-base, 4px);
+  margin-bottom: var(--space-5, 20px);
+}
+
+.gap-text-preview h6 {
+  margin: 0 0 var(--space-3, 12px) 0;
+  font-size: var(--text-sm, 13px);
+  font-weight: var(--font-semibold, 600);
+  color: var(--text-secondary, #4a5568);
+  text-transform: uppercase;
+}
+
+.filled-text {
+  padding: var(--space-4, 16px);
+  background: white;
+  border: 1px solid var(--border-primary, #e2e8f0);
+  border-radius: var(--radius-base, 4px);
+  line-height: var(--leading-relaxed, 1.8);
+  font-size: var(--text-base, 14px);
+}
+
+.gap-filled {
+  padding: var(--space-1, 4px) var(--space-2, 8px);
+  border-radius: var(--radius-sm, 3px);
+  font-weight: var(--font-semibold, 600);
+  border: 2px solid;
+}
+
+.gap-correct {
+  background: var(--color-success-100, #c6f6d5);
+  border-color: var(--color-success-500, #38a169);
+  color: var(--color-success-800, #22543d);
+}
+
+.gap-wrong {
+  background: var(--color-error-100, #fed7d7);
+  border-color: var(--color-error-500, #e53e3e);
+  color: var(--color-error-800, #822727);
+}
+
+.gap-empty {
+  background: var(--color-warning-100, #fef3c7);
+  border-color: var(--color-warning-500, #f59e0b);
+  color: var(--color-warning-800, #92400e);
 }
 
 /* Responsive */

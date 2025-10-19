@@ -32,6 +32,11 @@ const leftPanelWidth = ref(45);
 const isDragging = ref(false);
 const containerRef = ref(null);
 const activePartIndex = ref(0);
+const activePassageIndex = ref(0); // For reading section passages
+const showCongratsModal = ref(false);
+const submissionSuccess = ref(false);
+const showSectionConfirmModal = ref(false);
+const pendingSectionTransition = ref(false);
 
 const questionComponentMap = {
   TRUE_FALSE_NOT_GIVEN: TrueFalseTaker,
@@ -69,14 +74,72 @@ const currentPartQuestions = computed(() => {
   );
 });
 
+// Get INSTRUCTION type questions for current part
+const currentPartInstructions = computed(() => {
+  if (!currentPartQuestions.value.length) return [];
+  return currentPartQuestions.value.filter(
+    (q) => q.question.questionType === "INSTRUCTION"
+  );
+});
+
+// Get non-INSTRUCTION questions for current part
+const currentPartRealQuestions = computed(() => {
+  if (!currentPartQuestions.value.length) return [];
+
+  // For reading section, filter by current passage
+  if (activeSection.value === "READING") {
+    const passageKeys = Object.keys(readingPassages.value);
+    if (passageKeys.length === 0) {
+      return currentPartQuestions.value.filter(
+        (q) => q.question.questionType !== "INSTRUCTION"
+      );
+    }
+
+    const currentPassageText = passageKeys[activePassageIndex.value];
+    const questionsForPassage = readingPassages.value[currentPassageText] || [];
+    const questionIds = new Set(questionsForPassage.map((q) => q.id));
+
+    return currentPartQuestions.value.filter(
+      (q) =>
+        q.question.questionType !== "INSTRUCTION" &&
+        questionIds.has(q.question.id)
+    );
+  }
+
+  return currentPartQuestions.value.filter(
+    (q) => q.question.questionType !== "INSTRUCTION"
+  );
+});
+
+// Get total number of passages for reading section
+const totalPassages = computed(() => {
+  if (activeSection.value !== "READING") return 0;
+  return Object.keys(readingPassages.value).length;
+});
+
+// Get current passage text for reading
+const currentPassageText = computed(() => {
+  if (activeSection.value !== "READING") return "";
+  const passageKeys = Object.keys(readingPassages.value);
+  return passageKeys[activePassageIndex.value] || "";
+});
+
 const questionNumberMap = computed(() => {
   if (!exam.value) return {};
   const map = {};
-  let globalNumber = 1;
+
   exam.value.questions.forEach((qWrapper) => {
-    map[qWrapper.question.id] = globalNumber;
-    globalNumber++;
+    // Use backend-provided display numbers
+    map[qWrapper.question.id] = {
+      start: qWrapper.displayNumberStart,
+      end: qWrapper.displayNumberEnd,
+      count:
+        qWrapper.displayNumberEnd && qWrapper.displayNumberStart
+          ? qWrapper.displayNumberEnd - qWrapper.displayNumberStart + 1
+          : 0,
+    };
   });
+
   return map;
 });
 
@@ -115,6 +178,24 @@ onMounted(async () => {
       `/student/exams/${scheduledExamId}/start`
     );
     exam.value = response.data;
+
+    // Debug: Log question numbering
+    console.log("=== EXAM QUESTIONS DEBUG ===");
+    exam.value.questions.forEach((qWrapper, idx) => {
+      console.log(`Question ${idx + 1}:`, {
+        id: qWrapper.question.id,
+        type: qWrapper.question.questionType,
+        displayStart: qWrapper.displayNumberStart,
+        displayEnd: qWrapper.displayNumberEnd,
+        promptsCount: qWrapper.question.content?.prompts?.length,
+        labelsCount: qWrapper.question.content?.labels?.length,
+        answerKeys: qWrapper.question.answer
+          ? Object.keys(qWrapper.question.answer).length
+          : 0,
+      });
+    });
+    console.log("=========================");
+
     prepareReadingPassages();
     startTimer();
     window.addEventListener("beforeunload", beforeUnloadHandler);
@@ -256,13 +337,19 @@ async function submitExam() {
     await apiClient.post(`/student/exams/${scheduledExamId}/submit`, {
       answers: answersPayload,
     });
-    alert("Exam submitted successfully!");
+    submissionSuccess.value = true;
+    showCongratsModal.value = true;
     localStorage.removeItem("hasAudioPlayed");
-    router.push("/dashboard");
+
+    // Redirect after 3 seconds
+    setTimeout(() => {
+      router.push("/dashboard");
+    }, 3000);
   } catch (error) {
     errorMessage.value =
       error.response?.data?.error || "Failed to submit the exam.";
-    alert(errorMessage.value);
+    submissionSuccess.value = false;
+    showCongratsModal.value = true;
     console.error("Submit error:", error);
   }
 }
@@ -270,6 +357,12 @@ async function submitExam() {
 function goToPart(partIndex) {
   if (partIndex >= 0 && partIndex < sectionParts.value.length) {
     activePartIndex.value = partIndex;
+  }
+}
+
+function goToPassage(passageIndex) {
+  if (passageIndex >= 0 && passageIndex < totalPassages.value) {
+    activePassageIndex.value = passageIndex;
   }
 }
 
@@ -284,24 +377,33 @@ function scrollToQuestion(questionIndex) {
 }
 
 function nextSection(isAutoAdvance = false) {
-  if (
-    !isAutoAdvance &&
-    !confirm(
-      `Are you sure you want to finish the ${activeSection.value} section?`
-    )
-  ) {
+  if (!isAutoAdvance) {
+    // Show confirmation modal instead of alert
+    showSectionConfirmModal.value = true;
     return;
   }
+
+  // Actually proceed with transition
+  proceedToNextSection();
+}
+
+function proceedToNextSection() {
+  showSectionConfirmModal.value = false;
 
   if (activeSectionIndex.value < sections.length - 1) {
     activeSectionIndex.value++;
     activePartIndex.value = 0;
+    activePassageIndex.value = 0; // Reset passage index
     isTimeUp.value = false;
     prepareReadingPassages();
     startTimer();
   } else {
     submitExam();
   }
+}
+
+function cancelSectionTransition() {
+  showSectionConfirmModal.value = false;
 }
 
 const getComponentForQuestion = (questionType) => {
@@ -432,22 +534,34 @@ function stopDrag() {
                 <h2>Reading Passage</h2>
                 <span class="part-label">Part {{ currentPart }}</span>
               </div>
-              <div class="passage-container">
-                <div
-                  v-for="(questions, passageText, index) in readingPassages"
+
+              <!-- Passage Navigation -->
+              <div v-if="totalPassages > 1" class="passage-navigation">
+                <button
+                  v-for="index in totalPassages"
                   :key="index"
-                  class="passage-box"
+                  :class="[
+                    'passage-nav-btn',
+                    { active: activePassageIndex === index - 1 },
+                  ]"
+                  @click="goToPassage(index - 1)"
                 >
-                  <div class="passage-label">Passage {{ index + 1 }}</div>
+                  Passage {{ index }}
+                </button>
+              </div>
+
+              <!-- Single Passage Display -->
+              <div class="passage-container">
+                <div v-if="currentPassageText" class="passage-box">
+                  <div class="passage-label">
+                    Passage {{ activePassageIndex + 1 }}
+                  </div>
                   <div
                     class="passage-text"
-                    v-html="passageText.replace(/\n/g, '<br>')"
+                    v-html="currentPassageText.replace(/\n/g, '<br>')"
                   ></div>
                 </div>
-                <div
-                  v-if="Object.keys(readingPassages).length === 0"
-                  class="empty-state"
-                >
+                <div v-else class="empty-state">
                   <p>No passage available</p>
                 </div>
               </div>
@@ -485,22 +599,72 @@ function stopDrag() {
             <div class="panel-header">
               <h2>Questions - Part {{ currentPart }}</h2>
               <span class="question-badge"
-                >{{ currentPartQuestions.length }} Questions</span
+                >{{ currentPartRealQuestions.length }} Questions</span
               >
             </div>
+
+            <!-- Instructions Section -->
+            <div
+              v-if="currentPartInstructions.length > 0"
+              class="instructions-section"
+            >
+              <div
+                v-for="instruction in currentPartInstructions"
+                :key="instruction.question.id"
+                class="instruction-content"
+              >
+                <div class="instruction-icon">
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                  </svg>
+                </div>
+                <div
+                  class="instruction-text"
+                  v-html="
+                    instruction.question.content.instructions?.replace(
+                      /\n/g,
+                      '<br>'
+                    )
+                  "
+                ></div>
+              </div>
+            </div>
+
             <div class="questions-list">
               <div
-                v-for="(qWrapper, index) in currentPartQuestions"
+                v-for="(qWrapper, index) in currentPartRealQuestions"
                 :key="qWrapper.question.id"
                 :id="`question-${qWrapper.question.id}`"
                 class="question-item"
                 :class="{ 'is-answered': studentAnswers[qWrapper.question.id] }"
               >
                 <div class="question-meta">
-                  <span class="question-label"
-                    >Question
-                    {{ questionNumberMap[qWrapper.question.id] }}</span
+                  <span
+                    class="question-label"
+                    v-if="
+                      questionNumberMap[qWrapper.question.id]?.start !== null
+                    "
                   >
+                    {{
+                      questionNumberMap[qWrapper.question.id]?.start ===
+                      questionNumberMap[qWrapper.question.id]?.end
+                        ? `Question ${
+                            questionNumberMap[qWrapper.question.id]?.start
+                          }`
+                        : `Questions ${
+                            questionNumberMap[qWrapper.question.id]?.start
+                          }-${questionNumberMap[qWrapper.question.id]?.end}`
+                    }}
+                  </span>
                   <span
                     v-if="studentAnswers[qWrapper.question.id]"
                     class="status-indicator"
@@ -511,16 +675,151 @@ function stopDrag() {
                   :is="getComponentForQuestion(qWrapper.question.questionType)"
                   :question="qWrapper.question"
                   :initial-answer="studentAnswers[qWrapper.question.id]"
+                  :display-number-start="qWrapper.displayNumberStart"
+                  :display-number-end="qWrapper.displayNumberEnd"
                   @answer-updated="updateAnswer"
                 />
               </div>
-              <div v-if="!currentPartQuestions.length" class="empty-state">
+              <div v-if="!currentPartRealQuestions.length" class="empty-state">
                 <p>No questions in this part</p>
+              </div>
+
+              <!-- End of Section Button -->
+              <div
+                v-if="activePartIndex === sectionParts.length - 1"
+                class="end-section-container"
+              >
+                <button @click="nextSection()" class="finish-section-btn">
+                  {{
+                    activeSection === "WRITING"
+                      ? "Submit Exam"
+                      : `Finish ${activeSection} Section`
+                  }}
+                </button>
               </div>
             </div>
           </div>
         </main>
       </fieldset>
+
+      <!-- Section Confirmation Modal -->
+      <Teleport to="body">
+        <Transition name="modal-fade">
+          <div
+            v-if="showSectionConfirmModal"
+            class="congrats-overlay"
+            @click.self="cancelSectionTransition"
+          >
+            <div class="congrats-modal">
+              <div class="congrats-content">
+                <div class="warning-icon">
+                  <svg
+                    width="64"
+                    height="64"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path
+                      d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"
+                    ></path>
+                    <line x1="12" y1="9" x2="12" y2="13"></line>
+                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                  </svg>
+                </div>
+                <h2>Finish {{ activeSection }} Section?</h2>
+                <p>
+                  Once you proceed, you will not be able to return to this
+                  section.
+                </p>
+                <p class="answer-count">
+                  You have answered
+                  <strong>{{
+                    Object.keys(studentAnswers).filter((id) =>
+                      currentSectionQuestions.find((q) => q.question.id === id)
+                    ).length
+                  }}</strong>
+                  out of
+                  <strong>{{ currentSectionQuestions.length }}</strong>
+                  questions in this section.
+                </p>
+                <div class="modal-actions">
+                  <button @click="cancelSectionTransition" class="btn-cancel">
+                    Go Back
+                  </button>
+                  <button @click="proceedToNextSection" class="btn-confirm">
+                    {{
+                      activeSection === "WRITING"
+                        ? "Submit Exam"
+                        : "Continue to Next Section"
+                    }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Transition>
+      </Teleport>
+
+      <!-- Congratulations Modal -->
+      <Teleport to="body">
+        <Transition name="modal-fade">
+          <div
+            v-if="showCongratsModal"
+            class="congrats-overlay"
+            @click.self="showCongratsModal = false"
+          >
+            <div class="congrats-modal">
+              <div v-if="submissionSuccess" class="congrats-content success">
+                <div class="congrats-icon">
+                  <svg
+                    width="64"
+                    height="64"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                  </svg>
+                </div>
+                <h2>Congratulations!</h2>
+                <p>Your exam has been submitted successfully.</p>
+                <p class="redirect-text">Redirecting to dashboard...</p>
+                <div class="loading-dots">
+                  <span></span><span></span><span></span>
+                </div>
+              </div>
+              <div v-else class="congrats-content error">
+                <div class="error-icon">
+                  <svg
+                    width="64"
+                    height="64"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="15" y1="9" x2="9" y2="15"></line>
+                    <line x1="9" y1="9" x2="15" y2="15"></line>
+                  </svg>
+                </div>
+                <h2>Submission Failed</h2>
+                <p>{{ errorMessage }}</p>
+                <button
+                  @click="showCongratsModal = false"
+                  class="btn-close-modal"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </Transition>
+      </Teleport>
 
       <footer class="exam-footer">
         <ExamBottomNav
@@ -533,13 +832,6 @@ function stopDrag() {
           @go-to-part="goToPart"
           @go-to-question="scrollToQuestion"
         />
-        <button @click="nextSection()" class="finish-btn">
-          {{
-            activeSection === "WRITING"
-              ? "Submit Exam"
-              : `Finish ${activeSection} Section`
-          }}
-        </button>
       </footer>
     </div>
   </div>
@@ -1002,23 +1294,21 @@ function stopDrag() {
 }
 
 .question-item {
-  padding: 24px;
-  margin-bottom: 20px;
-  background: #fafafa;
-  border: 1px solid #e2e8f0;
-  border-radius: 4px;
+  padding: 20px 24px;
+  margin-bottom: 16px;
+  background: white;
+  border-radius: 0;
   transition: all 0.2s;
   border-left: 3px solid transparent;
 }
 
 .question-item:hover {
-  border-left-color: #2c5282;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border-left-color: #cbd5e0;
 }
 
 .question-item.is-answered {
   border-left-color: #38a169;
-  background: #f0fff4;
+  background: #fafffa;
 }
 
 .question-meta {
@@ -1031,18 +1321,21 @@ function stopDrag() {
 }
 
 .question-label {
-  font-size: 15px;
-  font-weight: 600;
-  color: #2c5282;
+  font-weight: 700;
+  color: #1a202c;
+  font-size: 14px;
+  letter-spacing: 0.3px;
 }
 
 .status-indicator {
-  font-size: 12px;
-  font-weight: 600;
-  color: #38a169;
-  padding: 4px 10px;
+  font-size: 11px;
+  padding: 3px 10px;
   background: #c6f6d5;
+  color: #22543d;
   border-radius: 3px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .empty-state {
@@ -1167,5 +1460,321 @@ function stopDrag() {
   .exam-footer {
     padding: 12px 20px;
   }
+}
+
+/* Instructions Section */
+.instructions-section {
+  margin: 0 24px 24px 24px;
+  background: #fffbeb;
+  border: 2px solid #fbbf24;
+  border-radius: 6px;
+  padding: 20px;
+}
+
+.instruction-content {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.instruction-icon {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  background: #fbbf24;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+}
+
+.instruction-text {
+  flex: 1;
+  line-height: 1.6;
+  color: #78350f;
+  font-size: 15px;
+}
+
+/* Congratulations Modal */
+.congrats-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+  backdrop-filter: blur(4px);
+}
+
+.congrats-modal {
+  background: white;
+  border-radius: 12px;
+  padding: 48px;
+  max-width: 480px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.congrats-content {
+  text-align: center;
+}
+
+.congrats-icon {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 24px;
+  background: #c6f6d5;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.congrats-icon svg {
+  color: #38a169;
+}
+
+.error-icon {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 24px;
+  background: #fed7d7;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.error-icon svg {
+  color: #e53e3e;
+}
+
+.congrats-content h2 {
+  font-size: 28px;
+  font-weight: 700;
+  margin: 0 0 16px 0;
+  color: #1a202c;
+}
+
+.congrats-content p {
+  font-size: 16px;
+  color: #4a5568;
+  margin: 0 0 12px 0;
+  line-height: 1.6;
+}
+
+.redirect-text {
+  font-size: 14px;
+  color: #718096;
+  font-style: italic;
+  margin-top: 24px !important;
+}
+
+.loading-dots {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.loading-dots span {
+  width: 10px;
+  height: 10px;
+  background: #2c5282;
+  border-radius: 50%;
+  animation: bounce 1.4s infinite ease-in-out both;
+}
+
+.loading-dots span:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.loading-dots span:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+@keyframes bounce {
+  0%,
+  80%,
+  100% {
+    transform: scale(0);
+  }
+  40% {
+    transform: scale(1);
+  }
+}
+
+.btn-close-modal {
+  background: #2c5282;
+  color: white;
+  border: none;
+  padding: 12px 32px;
+  border-radius: 6px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-top: 24px;
+}
+
+.btn-close-modal:hover {
+  background: #2a4365;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(44, 82, 130, 0.3);
+}
+
+/* Modal Transitions */
+.modal-fade-enter-active,
+.modal-fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.modal-fade-enter-active .congrats-modal,
+.modal-fade-leave-active .congrats-modal {
+  transition: transform 0.3s ease;
+}
+
+.modal-fade-enter-from,
+.modal-fade-leave-to {
+  opacity: 0;
+}
+
+.modal-fade-enter-from .congrats-modal,
+.modal-fade-leave-to .congrats-modal {
+  transform: translateY(-30px) scale(0.95);
+}
+
+/* End Section Container */
+.end-section-container {
+  margin-top: 32px;
+  padding: 24px;
+  text-align: center;
+  border-top: 2px solid #e2e8f0;
+}
+
+.finish-section-btn {
+  background: #1a202c;
+  color: white;
+  border: none;
+  padding: 14px 40px;
+  border-radius: 4px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.finish-section-btn:hover {
+  background: #2d3748;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(26, 32, 44, 0.3);
+}
+
+/* Warning Icon */
+.warning-icon {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 24px;
+  background: #fef3c7;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.warning-icon svg {
+  color: #f59e0b;
+}
+
+/* Modal Actions */
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+  justify-content: center;
+}
+
+.btn-cancel {
+  background: #e2e8f0;
+  color: #1a202c;
+  border: none;
+  padding: 12px 28px;
+  border-radius: 6px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-cancel:hover {
+  background: #cbd5e0;
+}
+
+.btn-confirm {
+  background: #2c5282;
+  color: white;
+  border: none;
+  padding: 12px 28px;
+  border-radius: 6px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-confirm:hover {
+  background: #2a4365;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(44, 82, 130, 0.3);
+}
+
+.answer-count {
+  font-size: 15px !important;
+  color: #1a202c !important;
+  margin-top: 16px !important;
+}
+
+.answer-count strong {
+  color: #2c5282;
+}
+
+/* Passage Navigation */
+.passage-navigation {
+  display: flex;
+  gap: 12px;
+  padding: 16px 24px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  margin: 0 -24px;
+}
+
+.passage-nav-btn {
+  padding: 10px 20px;
+  background: white;
+  border: 1px solid #cbd5e0;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #4a5568;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.passage-nav-btn:hover {
+  border-color: #64748b;
+  background: #f8fafc;
+}
+
+.passage-nav-btn.active {
+  background: #1a202c;
+  border-color: #1a202c;
+  color: white;
 }
 </style>
